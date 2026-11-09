@@ -107,6 +107,14 @@ static const float kCameraRearNormal = 35.0f;
 static const float kCameraZoomDistanceFree = -42.0f;
 static const float kCameraRearFree = 58.0f;
 
+// patched: the game camera zooms out past the original's farthest zoom (1) up to 2. The offset formula of MoveTo goes on
+// linearly, so zoom 2 puts the camera 41.1 from its focus, just inside the free camera's farthest (42, the scenario
+// editor's farthest view); the rear clipping distance follows (SetClippingDistances), at most the free camera's 58.
+// The engine's visible terrain is fixed-size (GETerrainMesh: a 100 x 100-tile box, 12000 terrain and 5000 water
+// polygons, unchecked), and the view frustum at rear 58 covers at most a ~53 x 53-tile box (any pitch) and ~1100
+// tiles, as in the editor.
+static const float kCameraZoomOutMaximum = 2.0f;
+
 // FUNCTION: EXE 0x5275b6
 // FUNCTION: EXE 0x5275bb
 // Initialises the camera's field of view (30 degrees)
@@ -255,9 +263,23 @@ void EECameraControl::SetClippingDistances()
         if (gFreeCamera)
             theFront = kCameraFrontMinimum;
         gViewport.SetFrontClippingDistance(theFront);
-        if (this->mMode != 3 && !gFreeCamera && !gFarRearClipping)
+        if (this->mMode != 3 && !gFreeCamera && !gFarRearClipping) {
             theRear = kCameraRearNormal;
-        else
+            // patched: zoomed out past the original's farthest zoom, the rear clipping distance grows with the
+            // camera's distance from its focus, from the normal one at the original's farthest distance to the free
+            // camera's at the free camera's farthest distance (at most that: see kCameraZoomOutMaximum). Up to the
+            // original's farthest distance it stays the normal one.
+            GE3DPoint theOffset;
+            this->GetOffset(this->mFraction, theOffset);
+            float theDistance = (float)sqrt(theOffset.GetX() * theOffset.GetX() + theOffset.GetY() * theOffset.GetY() +
+                                            theOffset.GetZ() * theOffset.GetZ());
+            if (theDistance > -kCameraZoomDistance) {
+                theRear += (kCameraRearFree - kCameraRearNormal) * (theDistance - -kCameraZoomDistance) /
+                           (-kCameraZoomDistanceFree - -kCameraZoomDistance);
+                if (theRear > kCameraRearFree)
+                    theRear = kCameraRearFree;
+            }
+        } else
             theRear = kCameraRearFree;
     } else {
         theRear = kCameraRearMaximum;
@@ -509,6 +531,10 @@ float EECameraControl::GetPitch(float inZoom, long inMode)
     GEVector theUp(0.0f, 1.0f, 0.0f);
     GEVector theRotated;
     float theResult = 0.0f;
+    // patched: past the original's farthest zoom (1) the camera keeps the farthest pitch and only moves back (the
+    // curves are defined on 0..1: mode 1's and the free camera's have no value past 1)
+    if (inZoom > 1.0f)
+        inZoom = 1.0f;
     if (inMode == 0)
         return (sCameraPitchFar - sCameraPitchNear) * (1.0f - (float)pow(1.0f - inZoom, 1.0)) + sCameraPitchNear;
     if (inMode == 1)
@@ -629,6 +655,10 @@ void EECameraControl::MoveTo(EEUnit* inUnitA, GE3DPoint inLocationA, bool inFlag
         float theZoom = inZoom;
         if (inZoom < 0.0f)
             theZoom = 0.0f;
+        // patched: at most this camera's farthest zoom, so a switch to the free camera (SetMode(3) reapplies mZoom)
+        // while the game camera is zoomed out past 1 stops at the free camera's farthest distance
+        if (theZoom > this->GetMaximumZoom())
+            theZoom = this->GetMaximumZoom();
         float theFar;
         if (this->mMode != 3 && !gFreeCamera && !gFarRearClipping)
             theFar = kCameraZoomDistance;
@@ -844,6 +874,16 @@ void EECameraControl::Scroll(float inDX, float inDY)
 void EECameraControl::ResetZoom()
 {
     this->SetZoom(1.0f);
+}
+
+// patched: the farthest zoom the wheel and the zoom hot keys reach: kCameraZoomOutMaximum for the game camera, 1 (the
+// original's) for the free camera (cinematics, the scenario editor) and the far view, which are already as far out
+// as the engine draws
+float EECameraControl::GetMaximumZoom() const
+{
+    if (this->mMode != 3 && !gFreeCamera && !gFarRearClipping)
+        return kCameraZoomOutMaximum;
+    return 1.0f;
 }
 
 // FUNCTION: EXE 0x52935b

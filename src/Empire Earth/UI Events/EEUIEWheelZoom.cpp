@@ -50,7 +50,8 @@
 #include "ee/EEUIEWheelZoom.h"
 
 // FUNCTION: EXE 0x5e9f40
-// Zooms the camera by the mouse wheel (clamped to 0..1); in camera mode 3 outside a cinematic, resets the camera
+// Zooms the camera by the mouse wheel (clamped to 0..1; patched: to 0..GetMaximumZoom); in camera mode 3 outside a
+// cinematic, resets the camera
 long EEUIEWheelZoom::ProcessEvent(UIForm* inForm, UIEntity* inEntity)
 {
     float theZoom = gWorld.mCameraControl.mZoom;
@@ -65,11 +66,12 @@ long EEUIEWheelZoom::ProcessEvent(UIForm* inForm, UIEntity* inEntity)
         gWorld.mCameraControl.ResetZoom();
         gWorld.mCameraControl.SetChanged();
     } else {
+        float theMaximum = gWorld.mCameraControl.GetMaximumZoom();
         theZoom = theZoom - theWheel->GetNormalizedValue() * 0.05f;
         if (theZoom < 0.0f)
             theZoom = 0.0f;
-        else if (theZoom > 1.0f)
-            theZoom = 1.0f;
+        else if (theZoom > theMaximum)
+            theZoom = theMaximum;
         gWorld.mCameraControl.SetZoom(theZoom);
     }
     return kErrorOK;

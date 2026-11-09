@@ -133,12 +133,13 @@ long EEUIEKeyboardScroll::ProcessEvent(UIForm* inForm, UIEntity* inEntity)
 }
 
 // FUNCTION: EXE 0x5d9c3b
-// Zooms the camera one step in or out (step grows with zoom), clamped to 0..1; in camera mode 3 (outside a
-// cinematic) returns to mode 0 at the default zoom instead; nothing when zooming is disabled
+// Zooms the camera one step in or out (step grows with zoom), clamped to 0..1 (patched: to 0..GetMaximumZoom); in
+// camera mode 3 (outside a cinematic) returns to mode 0 at the default zoom instead; nothing when zooming is disabled
 long EEUIEHotKeyZoom::ProcessEvent(UIForm* inForm, UIEntity* inEntity)
 {
     float theZoom = gWorld.mCameraControl.GetZoom();
-    float theAngle = theZoom * 1.5707964f;
+    // patched: past zoom 1 the step stays at its zoom-1 size (the cosine would shrink it back to the minimum by zoom 2)
+    float theAngle = min(theZoom, 1.0f) * 1.5707964f;
     float theStep = min(max(UMCos(1.5707964f - theAngle), 0.0f), 1.0f);
     if (gGamePreferences.mSettings.mZoomEnabled) {
         if (!gWorld.mInCinematic && gWorld.mCameraControl.mMode == 3) {
@@ -151,7 +152,7 @@ long EEUIEHotKeyZoom::ProcessEvent(UIForm* inForm, UIEntity* inEntity)
                 theZoom = theZoom - theStep;
             else
                 theZoom = theZoom + theStep;
-            theZoom = min(max(theZoom, 0.0f), 1.0f);
+            theZoom = min(max(theZoom, 0.0f), gWorld.mCameraControl.GetMaximumZoom());
             gWorld.mCameraControl.SetZoom(theZoom);
         }
     }

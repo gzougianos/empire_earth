@@ -191,6 +191,10 @@ CI (GitHub Actions, `windows-latest`) fetches the pinned toolchain and builds ev
   - The build is self-contained (`setup.cmd`, `build.cmd`; see Building): nothing to install, nothing written
     outside the checkout. It compiles with plain paths inside the checkout, so even before any change of our own its
     code is equivalent to `fixes-all`'s rather than byte-identical, and the output varies with the checkout's path.
+  - Farther zoom: in a game, the mouse wheel and the zoom hot keys zoom the camera out to about twice the original
+    farthest distance, as far as the scenario editor's farthest view, and the view distance (the rear clipping
+    distance) grows with it. The original zoom range is unchanged, and a game still starts at the original farthest
+    zoom. Cinematics and the scenario editor keep their original limits.
   - Every change on top (new features included) may alter the simulation, the network traffic or the save format
     further. Play multiplayer only with players running the same `patched` build: share the built files rather than
     each player building their own. Saves load as on `fixes-all` until a change touches the save format.

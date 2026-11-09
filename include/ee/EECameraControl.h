@@ -39,7 +39,9 @@ public:
     // (provisional name)
     void Follow(EEUnit* inUnit, bool inFlag, float inDuration, float inTurnYaw, float inTurnPitch);
     void Scroll(float inDX, float inDY);    // 0x128ea5 (the edge-scroll action EEAScroll; provisional name)
-    void SetZoom(float inZoom);             // 0x129eb2: 0 (near) .. 1 (far)
+    void SetZoom(float inZoom);             // 0x129eb2: 0 (near) .. 1 (far; the game camera goes on to GetMaximumZoom)
+    // patched: the farthest zoom the wheel and the zoom hot keys reach (2 for the game camera, else 1)
+    float GetMaximumZoom() const;
     // EEScenarioManager::EndCinematic 0x1b1ae4 restores the camera from its saved EECameraKey with these (provisional
     // names by address; arguments from `ret 8` and the pushes)
     void ResetPath();                       // 0x1277c9
