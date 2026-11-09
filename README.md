@@ -6,6 +6,9 @@ A matching decompilation of *Empire Earth: The Art of Conquest* (Stainless Steel
 that compiles, with the original toolchain, to the same machine code as the retail release. It covers the game
 executable and its first-party DLLs. The source is not complete yet (see Status); every image links from it.
 
+> **This is the `patched` branch**: `fixes-all` plus a self-contained build and, from here on, changes and new
+> features of our own. Byte-identity with the retail release is not a goal on this branch; see Branches.
+
 Toolchain of the original build:
 
 - Microsoft Visual C++ 6.0 RTM (C/C++ compiler 12.00.8168), LINK 6.00
@@ -178,11 +181,27 @@ CI (GitHub Actions, `windows-latest`) fetches the pinned toolchain and builds ev
   behaves as the game was meant to rather than as it shipped. Play multiplayer only with other `fixes-all` players
   (the simulation differs from the original's, so mixed games go out of sync); saves load where the save format
   allows. Its `FIXES.md` adds every fix beyond `fixes` and the behaviour changes a player will notice.
+- **`patched`**: `fixes-all` plus changes of our own: the place to change how the game is built and to add new
+  features to it. Byte-identity with the retail release is not a goal here, only a game that works and is easy to
+  build and change:
+  - The build is self-contained (`setup.cmd`, `build.cmd`; see Building): nothing to install, nothing written
+    outside the checkout. It compiles with plain paths inside the checkout, so even before any change of our own its
+    code is equivalent to `fixes-all`'s rather than byte-identical, and the output varies with the checkout's path.
+  - Every change on top (new features included) may alter the simulation, the network traffic or the save format
+    further. Play multiplayer only with players running the same `patched` build: share the built files rather than
+    each player building their own. Saves load as on `fixes-all` until a change touches the save format.
 
-Every branch builds the same way (see Building). To switch, check the branch out and rebuild:
+`main`, `fixes` and `fixes-all` build with upstream's tools (`python -I build.py`, toolchain in `toolchain/`; see the
+README on each branch); `patched` builds with `setup.cmd` and `build.cmd`. To switch, check the branch out and
+rebuild with that branch's command:
 
 ```
-git switch <branch>
+git switch fixes-all
+python -I build.py
+```
+
+```
+git switch patched
 build.cmd
 ```
 
@@ -191,6 +210,10 @@ The fix branches are patch sets on top of `main`: whenever `main` is updated, th
 rather than a merge). Each fix is one commit that names the bug it fixes (`git log --oneline main..fixes`).
 `FIXES.md` on each fix branch, added by the branch's first commit, describes every fix: the function and its address
 in the original game, what the original does wrong and what the fix does, grouped by area.
+
+`patched` is in turn a set of commits on top of `fixes-all`. When `fixes-all` is rewritten, replay them onto the new
+one with `git rebase --onto origin/fixes-all <old-base> patched`, where `<old-base>` is the `fixes-all` commit
+`patched` currently starts from (the parent of its first own commit in `git log --oneline`).
 
 ## License
 
