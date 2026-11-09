@@ -3,9 +3,20 @@ import os
 import pathlib
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 LINK_DIR = ROOT / "link"
-TOOLCHAIN = pathlib.Path(os.environ.get("EE_TOOLCHAIN", ROOT / "toolchain"))
+# Everything the build fetches (compiler packages, SDK files, portable Python and 7-Zip, download cache) lives in
+# toolkit/, everything it stages and its temporary files in workdir/, its output in target/: all inside the checkout.
+# EE_TOOLCHAIN only moves where the fetch scripts put things: the Dinkum wrapper headers (include/dinkum) include the
+# compiler's own headers as ../../toolkit/msvc6.0/Include/..., so compiling needs the toolchain at toolkit/.
+TOOLCHAIN = pathlib.Path(os.environ.get("EE_TOOLCHAIN", ROOT / "toolkit"))
+WORKDIR = ROOT / "workdir"
+TARGET = ROOT / "target"
 COMPILER = "msvc6.0"
-ORIG_SRC_ROOT = pathlib.Path(os.environ.get("EE_ORIG_SRC_ROOT", r"C:\EEX"))
+ORIG_SRC_ROOT = pathlib.Path(os.environ.get("EE_ORIG_SRC_ROOT", WORKDIR / "EEX"))
+# EE_ORIG_SRC_ROOT at the root of a drive (C:\EEX, the original build tree) selects the original layout: the compiler
+# then sees the same paths, path lengths and drive-relative include flags as the retail build, so the output matches
+# upstream. Anywhere else the build compiles with plain absolute paths inside the checkout; the code is equivalent
+# but not byte-identical to the original's.
+ORIGINAL_LAYOUT = ORIG_SRC_ROOT.parent == pathlib.Path(ORIG_SRC_ROOT.anchor)
 MODULE_SRC = {
     "tcp": "Low-Level Engine/Network Engine/TCP Protocol",
     "mixer": "Low-Level Engine/Sound Engine/Miles Sound System Mixer",
@@ -20,6 +31,40 @@ MODULE_SRC = {
 }
 EEX_INCLUDE_DIRS = ["Low-Level Engine/Thread System", "Low-Level Engine/Graphics Engine",
                     "Empire Earth/Database", "Empire Earth/AI Thread"]
+
+
+def github_asset(repo, asset_id):
+    """The GitHub API route to a release asset: a fallback source for download() when the release's download link
+    fails (github.com's releases/download endpoint answers 504 for long stretches at times)."""
+    return f"https://api.github.com/repos/{repo}/releases/assets/{asset_id}", {"Accept": "application/octet-stream"}
+
+
+def download(sources, dst, tries=10):
+    """Download to dst through dst.part, retrying transient failures (HTTP 5xx, dropped connections) and taking the
+    sources in turn. A source is a URL or a (URL, headers) pair; pass one or a list. The caller checks the digest."""
+    import shutil
+    import time
+    import urllib.error
+    import urllib.request
+    if isinstance(sources, (str, tuple)):
+        sources = [sources]
+    sources = [s if isinstance(s, tuple) else (s, {}) for s in sources]
+    dst = pathlib.Path(dst)
+    part = dst.with_name(dst.name + ".part")
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    for i in range(tries):
+        url, headers = sources[i % len(sources)]
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=120) as r, \
+                    open(part, "wb") as f:
+                shutil.copyfileobj(r, f, 1 << 20)
+            part.replace(dst)
+            return dst
+        except OSError as e:
+            if (isinstance(e, urllib.error.HTTPError) and e.code < 500) or i == tries - 1:
+                raise
+            print(f"{url}: {e}; retrying", flush=True)
+            time.sleep(min(5 * (i // len(sources) + 1), 30))
 
 
 def module_src(mod):

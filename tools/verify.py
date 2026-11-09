@@ -1,4 +1,5 @@
-"""Compile helpers: stage a unit under the original build path (C:\\EEX) and compile it with the pinned VC6."""
+"""Compile helpers: stage a unit under the build path (workdir/EEX, or C:\\EEX for the original layout) and compile it
+with the pinned VC6."""
 import os
 import pathlib
 import re
@@ -7,7 +8,7 @@ import subprocess
 import sys
 import time
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from ee import LINK_DIR, COMPILER, EEX_INCLUDE_DIRS, ORIG_SRC_ROOT, ROOT, TOOLCHAIN
+from ee import LINK_DIR, COMPILER, EEX_INCLUDE_DIRS, ORIGINAL_LAYOUT, ORIG_SRC_ROOT, ROOT, TOOLCHAIN
 DEFINES = "-DWIN32 -DNDEBUG -D_WINDOWS"
 
 
@@ -43,7 +44,9 @@ def include_paths(src=None):
         dst.mkdir(parents=True, exist_ok=True)
         for f in sorted((ROOT / "src" / d).glob("*.h")):
             _stage_write(dst / f.name, f.read_bytes())
-        flags.append("/I\\eex\\" + d.replace("/", "\\"))
+        # the original build passed drive-relative include paths (resolved against the drive of the compile's
+        # working directory); elsewhere the staged folder is named by its absolute path
+        flags.append("/I\\eex\\" + d.replace("/", "\\") if ORIGINAL_LAYOUT else f"/I{dst}")
     pkg = TOOLCHAIN / COMPILER
     incdir = pathlib.Path(os.environ.get("EE_INCLUDE", str(ROOT / "include")))
     dx7 = pathlib.Path(os.environ.get("EE_DX7SDK", str(TOOLCHAIN / "dx7sdk" / "include")))

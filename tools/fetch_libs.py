@@ -1,17 +1,17 @@
-"""Fetch the vintage Microsoft SDK files the build uses into toolchain/ (gitignored). Every download and every
-extracted file is sha256-pinned; refuses on a mismatch.
+"""Fetch the vintage Microsoft SDK files the build uses into toolkit/ (gitignored; env EE_TOOLCHAIN moves it). Every
+download and every extracted file is sha256-pinned; refuses on a mismatch.
 
   python -I tools/fetch_libs.py [--libs] [--dl DIR ...]
 
-Default: the DirectX 7.0a SDK headers (toolchain/dx7sdk/include; the DX7 renderer sources compile against them).
---libs also fetches the libraries the link uses: VC6 RTM import libraries and msvcrt.lib (toolchain/vc98lib/rtm),
-DirectX 8.1 SDK ddraw/dinput/dxguid.lib (toolchain/dx81sdk/lib) and the Platform SDK (June 2001) IPHlpApi.Lib
-(toolchain/psdk/lib).
+Default: the DirectX 7.0a SDK headers (toolkit/dx7sdk/include; the DX7 renderer sources compile against them).
+--libs also fetches the libraries the link uses: VC6 RTM import libraries and msvcrt.lib (toolkit/vc98lib/rtm),
+DirectX 8.1 SDK ddraw/dinput/dxguid.lib (toolkit/dx81sdk/lib) and the Platform SDK (June 2001) IPHlpApi.Lib
+(toolkit/psdk/lib).
 
-Downloads come from archive.org and are cached in toolchain/dl/. --dl DIR (repeatable) names directories that
-already hold some of the downloads (same file names); they are read, never written. Needs 7-Zip: `7z` on PATH,
-C:\\Program Files\\7-Zip\\7z.exe, MSYS2's p7zip, or env EE_7Z. Extraction goes to a fresh temporary directory and
-nothing from it is executed.
+Downloads come from archive.org and are cached in toolkit/dl/. --dl DIR (repeatable) names directories that
+already hold some of the downloads (same file names); they are read, never written. Needs 7-Zip: env EE_7Z, the
+portable copy setup.cmd puts in toolkit/7zip/, `7z` on PATH, C:\\Program Files\\7-Zip\\7z.exe or MSYS2's p7zip.
+Extraction goes to a fresh temporary directory (workdir/tmp when run from setup.cmd) and nothing from it is executed.
 """
 import argparse
 import hashlib
@@ -21,10 +21,12 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import urllib.request
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from ee import download
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-TC = pathlib.Path(os.environ.get("EE_TOOLCHAIN", ROOT / "toolchain"))
+TC = pathlib.Path(os.environ.get("EE_TOOLCHAIN", ROOT / "toolkit"))
 
 DOWNLOADS = {
     "dx7adxf.exe": ("https://archive.org/download/dx7adxf/dx7adxf.exe",
@@ -82,17 +84,15 @@ def fetch(name, extra_dirs):
             return p
     dst = TC / "dl" / name
     if not dst.exists():
-        dst.parent.mkdir(parents=True, exist_ok=True)
         print(f"downloading {url}", flush=True)
-        urllib.request.urlretrieve(url, dst.with_suffix(".part"))
-        dst.with_suffix(".part").replace(dst)
+        download(url, dst)
     if sha(dst) != pin:
         sys.exit(f"{name}: sha256 {sha(dst)} != pinned {pin}")
     return dst
 
 
 def sevenzip():
-    for c in (os.environ.get("EE_7Z"), shutil.which("7z"), r"C:\Program Files\7-Zip\7z.exe"):
+    for c in (os.environ.get("EE_7Z"), TC / "7zip" / "7z.exe", shutil.which("7z"), r"C:\Program Files\7-Zip\7z.exe"):
         if c and pathlib.Path(c).exists():
             return pathlib.Path(c), False
     if MSYS_7Z.exists():

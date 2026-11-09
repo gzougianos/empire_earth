@@ -4,7 +4,7 @@
 // the converting ctor is out of line (0x3558), operator+ is out of line (0x3750).
 #ifndef EE_DINKUM_XUTILITY
 #define EE_DINKUM_XUTILITY
-#include "../../toolchain/msvc6.0/Include/XUTILITY"
+#include "../../toolkit/msvc6.0/Include/XUTILITY"
 
 #ifdef  _MSC_VER
 #pragma pack(push,8)

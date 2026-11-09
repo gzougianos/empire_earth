@@ -77,19 +77,30 @@ Testing (automated, on the full-source build of the game and engine):
 
 ## Building
 
-Requirements: Windows (the 32-bit VC6 tools run natively on 64-bit Windows 10/11), Python 3.12 (standard library
-only), 7-Zip (`7z` on PATH, `C:\Program Files\7-Zip\7z.exe`, MSYS2's p7zip, or env `EE_7Z`), about 3 GB of free disk
-space while the libraries are extracted (about 1.7 GB afterwards, 1.1 GB of it the downloads cached in
-`toolchain/dl/`), network access to github.com and archive.org.
+Everything the build needs and everything it makes stays inside the checkout. Nothing is installed and nothing is
+written anywhere else:
 
-1. Fetch the toolchain. Everything goes to `toolchain/` (not tracked); every download and every extracted file is
-   sha256-pinned and checked.
+| Folder (gitignored) | Contents |
+|---|---|
+| `toolkit/` | portable Python 3.12 and 7-Zip, the VC6 compiler packages, the SDK headers and link libraries, the download cache (`toolkit/dl/`) |
+| `workdir/` | the staged sources (`workdir/EEX/`) and every tool's temporary files (`workdir/tmp/`) |
+| `target/` | the built images and their object files |
+
+Requirements: Windows 10 (1803 or later) or 11, whose own `curl.exe`, `tar.exe` and `certutil` the setup uses (the
+32-bit VC6 tools run natively on 64-bit Windows), about 3 GB of free disk space while the libraries are extracted
+(`toolkit/` is about 1.4 GB afterwards, 1.1 GB of it the download cache in `toolkit/dl/`; a full build adds about
+300 MB in `target/`), network access to python.org, github.com and archive.org.
+
+1. Fetch the toolkit (once; safe to re-run). Every download and every extracted file is sha256-pinned and checked.
 
    ```
-   python -I tools/fetch_toolchain.py 6.0 6.3 6.4 6.5pp 7.0
-   python -I tools/fetch_libs.py --libs
+   setup.cmd
    ```
 
+   - Python: python.org's embeddable Python 3.12.10, unpacked into `toolkit/python/`. The rest of the setup
+     (`tools/setup_toolkit.py`) runs with it.
+   - 7-Zip 26.05: `7z.exe` and `7z.dll` unpacked from the official installer into `toolkit/7zip/` (the installer is
+     never run).
    - `fetch_toolchain.py`: the decomp.me compiler packages (github.com; about 60 MB): VC6 RTM (the compiler, LINK,
      LIB), SP3 (LIB for one import library), SP4 (libjpeg in the engine, Dinkum's `operator new[]`/`delete[]`),
      SP5 + Processor Pack (Miles' `MSS_auto_cleanup`) and Visual C++ .NET 2002 (only its RC, for the resource
@@ -97,44 +108,55 @@ space while the libraries are extracted (about 1.7 GB afterwards, 1.1 GB of it t
    - `fetch_libs.py`: the DirectX 7.0a SDK headers, and with `--libs` the link libraries: the VC6 RTM import
      libraries and `msvcrt.lib` (from the Visual C++ 6.0 Professional CD), DirectX 8.1 SDK `ddraw.lib`,
      `dinput.lib`, `dxguid.lib` and the Platform SDK (June 2001) `IPHlpApi.Lib` (archive.org; about 1.1 GB of
-     downloads, cached in `toolchain/dl/`; `--dl DIR` reads downloads you already have).
+     downloads, cached in `toolkit/dl/`; `--dl DIR` reads downloads you already have).
 
-   `python -I tools/fetch_libs.py` without `--libs` fetches only the headers, enough for `--compile-only`.
+   With your own Python 3.12 and 7-Zip instead, run `python -I tools/fetch_toolchain.py 6.0 6.3 6.4 6.5pp 7.0` and
+   `python -I tools/fetch_libs.py --libs`; without `--libs` it fetches only the headers, enough for `--compile-only`.
 
 2. Build:
 
    ```
-   python -I build.py                  # every image
-   python -I build.py -j 4 lle         # one image, 4 parallel compiles
-   python -I build.py --compile-only   # compile every unit, link nothing
+   build.cmd                  # every image
+   build.cmd -j 4 lle         # one image, 4 parallel compiles (default: one per CPU)
+   build.cmd --compile-only   # compile every unit, link nothing
    ```
+
+   `build.cmd` runs `build.py` with the portable Python; `python -I build.py` takes the same arguments.
 
    Outputs (each with its `.map` and `.pdb`):
 
    | Target | Output |
    |---|---|
-   | `tcp` | `build/tcp/TCP Protocol.dll` |
-   | `mixer` | `build/mixer/Miles Sound System Mixer.dll` |
-   | `default` | `build/default/Default.dll` |
-   | `lle` | `build/lle/Low-Level Engine.dll` (with libjpeg and the DCL) |
-   | `dx7hr` | `build/dx7hr/DX7HRDisplay.dll` |
-   | `dx7hrtnl` | `build/dx7hrtnl/DX7HRTnLDisplay.dll` |
-   | `language` | `build/language/Language.dll` |
-   | `exe` | `build/exe/EE-AOC.exe` (with the image libraries) |
+   | `tcp` | `target/tcp/TCP Protocol.dll` |
+   | `mixer` | `target/mixer/Miles Sound System Mixer.dll` |
+   | `default` | `target/default/Default.dll` |
+   | `lle` | `target/lle/Low-Level Engine.dll` (with libjpeg and the DCL) |
+   | `dx7hr` | `target/dx7hr/DX7HRDisplay.dll` |
+   | `dx7hrtnl` | `target/dx7hrtnl/DX7HRTnLDisplay.dll` |
+   | `language` | `target/language/Language.dll` |
+   | `exe` | `target/exe/EE-AOC.exe` (with the image libraries) |
 
-   Objects go to `build/obj/<module>/`; `--out DIR` puts everything under `DIR` instead of `build/`. A full build
-   compiles 845 units and links 8 images (about 3 minutes with `-j 2` on a current desktop).
+   Objects go to `target/obj/<module>/`; `--out DIR` puts everything under `DIR` instead of `target/`. A full build
+   compiles 845 units and links 8 images.
 
    The engine and TCP DLLs carry a compensation block (appended after the image, never loaded) so their checksum
    matches the retail files, which the game's multiplayer version check compares (`--no-retail-checksum` leaves them
    as linked).
 
-   Paths: sources are staged under `C:\EEX\` (the original build tree, so that `__FILE__` strings match) before each
-   compile; set `EE_ORIG_SRC_ROOT` to `X:\EEX` to use another drive. VC6's code generation depends on the lengths of
-   some paths it reads, so the build normalises them: unless the checkout path is 23 characters long it copies
-   `src/`, `include/` and the compiler packages it uses to `C:\EEX-root____________` (same drive as the staging
-   root, padded to that length) and compiles from there, and it runs every tool with `TMP`/`TEMP` set to
-   `C:\EEX-tmp_____________________` (31 characters).
+   Paths: sources are staged under `workdir/EEX/` before each compile and every tool runs with `TMP`/`TEMP` set to
+   `workdir/tmp/`. The compiler gets plain absolute paths inside the checkout, so the code it generates is equivalent
+   to upstream's but not byte-identical: VC6's code generation depends on the lengths of some paths it reads, and
+   those lengths now depend on where the checkout is.
+
+   Original layout (upstream's path normalisation, e.g. to compare against the retail code): set
+   `EE_ORIG_SRC_ROOT=C:\EEX` (or `X:\EEX` for another drive). Sources are then staged there, the original build tree,
+   so that `__FILE__` strings match; unless the checkout path is 23 characters long the build copies `src/`,
+   `include/` and the compiler packages it uses to `C:\EEX-root____________` (same drive as the staging root, padded
+   to that length) and compiles from there, and it runs every tool with `TMP`/`TEMP` set to
+   `C:\EEX-tmp_____________________` (31 characters). This layout writes outside the checkout. It is not guaranteed
+   to match upstream byte for byte either: the toolchain folder is `toolkit/` here and `toolchain/` upstream, and the
+   Dinkum wrapper headers name it (`include/dinkum/new`, `xstddef`, `xstring`, `xutility`), so the paths the
+   compiler reads differ in length.
 
    Two builds of the same source give the same images apart from link time stamps, PDB paths and signatures, and
    one more field: VC6 names an anonymous namespace after the source file and the time of the compile (in seconds),
@@ -157,11 +179,11 @@ CI (GitHub Actions, `windows-latest`) fetches the pinned toolchain and builds ev
   (the simulation differs from the original's, so mixed games go out of sync); saves load where the save format
   allows. Its `FIXES.md` adds every fix beyond `fixes` and the behaviour changes a player will notice.
 
-Every branch builds the same way (`python -I build.py`, see Building). To switch, check the branch out and rebuild:
+Every branch builds the same way (see Building). To switch, check the branch out and rebuild:
 
 ```
 git switch <branch>
-python -I build.py
+build.cmd
 ```
 
 The fix branches are patch sets on top of `main`: whenever `main` is updated, their commits are replayed onto the new

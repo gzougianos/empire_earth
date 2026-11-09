@@ -4,6 +4,6 @@
 #ifdef EE_DINKUM_SXL233
 #include "xstring_sxl233"
 #else
-#include "../../toolchain/msvc6.0/Include/XSTRING"
+#include "../../toolkit/msvc6.0/Include/XSTRING"
 #endif
 #endif

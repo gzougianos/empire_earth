@@ -4,7 +4,7 @@
   python -I tools/build.py --compile-only [-j N] [--out DIR] [module ...]   compile only
 
 Targets (default: all): tcp mixer default lle dx7hr dx7hrtnl language exe. Each links into <out>/<target>/ (default
-out: build/): TCP Protocol.dll, Miles Sound System Mixer.dll, Default.dll, Low-Level Engine.dll (with libjpeg, module
+out: target/): TCP Protocol.dll, Miles Sound System Mixer.dll, Default.dll, Low-Level Engine.dll (with libjpeg, module
 jpeg), DX7HRDisplay.dll, DX7HRTnLDisplay.dll, Language.dll (resources only) and EE-AOC.exe (with the image libraries,
 module exeimg, and the WON library, module won), each with its .map and .pdb. The DLLs link with tools/relink.py, the executable with
 tools/exe_fulllink.py (link_exe), the resources compile with tools/rsrc_rebuild.py.
@@ -14,13 +14,17 @@ tools/exe_fulllink.py (link_exe), the resources compile with tools/rsrc_rebuild.
 Units come from link/<module>/units.txt (in link order), or every .cpp of the module's source folder when the
 module has no unit list. Each unit is compiled with the module's flags (tools/ee.py MODULE_FLAGS), or its own
 `// UNIT-FLAGS:` line, with the compiler package its `// UNIT-COMPILER:` line names (default VC6 RTM,
-toolchain/msvc6.0). Library members built from source (tools/relink.py LIB_UNITS: Dinkum's operator new[]/delete[],
+toolkit/msvc6.0). Library members built from source (tools/relink.py LIB_UNITS: Dinkum's operator new[]/delete[],
 the PKWARE DCL implode/explode, Miles' MSS_auto_cleanup) are compiled with the modules that link them.
 
-Sources are staged under C:\\EEX (env EE_ORIG_SRC_ROOT overrides it; it must sit at the root of a drive), the
-original build tree, so that __FILE__ strings match. Objects go to <out>/obj/<module>/<unit path>.obj. Every unit is
-compiled once; the link steps take the objects from there. The build reads no original game file
-(EE_NO_ORIGINALS=1). Exit status 1 if any unit fails to compile or any link fails.
+Sources are staged under workdir/EEX and every tool runs with TMP/TEMP set to workdir/tmp, so the build writes
+nothing outside the checkout (toolkit/ holds the toolchain, target/ the output). Env EE_ORIG_SRC_ROOT moves the
+staging folder; set to the root of a drive (C:\\EEX, the original build tree) it selects the original layout, which
+reproduces the retail build's compiler input exactly: __FILE__ strings match, a checkout path of other than 23
+characters is mirrored to <drive>\\EEX-root____________ and TMP/TEMP point at <drive>\\EEX-tmp_____________________,
+because VC6's code generation depends on the lengths of those paths. Objects go to <out>/obj/<module>/<unit
+path>.obj. Every unit is compiled once; the link steps take the objects from there. The build reads no original game
+file (EE_NO_ORIGINALS=1). Exit status 1 if any unit fails to compile or any link fails.
 
 Retail checksum (default on; --no-retail-checksum turns it off): the game's multiplayer version check
 (EEInitializeNetwork) adds up every byte of Low-Level Engine.dll and TCP Protocol.dll (with sxlrt233.dll and the data
@@ -46,7 +50,8 @@ os.environ["EE_NO_ORIGINALS"] = "1"
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import relink
 import verify
-from ee import LINK_DIR, COMPILER, MODULE_FLAGS, ORIG_SRC_ROOT, ROOT, TOOLCHAIN, module_units
+from ee import LINK_DIR, COMPILER, MODULE_FLAGS, ORIGINAL_LAYOUT, ORIG_SRC_ROOT, ROOT, TARGET, TOOLCHAIN, \
+    module_units
 
 MODULES = ["tcp", "mixer", "default", "lle", "jpeg", "dx7hr", "dx7hrtnl", "exeimg", "won", "exe"]
 TARGETS = ["tcp", "mixer", "default", "lle", "dx7hr", "dx7hrtnl", "language", "exe"]
@@ -158,8 +163,12 @@ def staging_drive():
 
 
 def canonical_tmp():
-    d = pathlib.Path(ORIG_SRC_ROOT.drive + "\\" + "EEX-tmp".ljust(TMP_PATH_LEN - len(ORIG_SRC_ROOT.drive) - 1, "_"))
-    d.mkdir(exist_ok=True)
+    if ORIGINAL_LAYOUT:
+        d = pathlib.Path(ORIG_SRC_ROOT.drive + "\\" + "EEX-tmp".ljust(TMP_PATH_LEN - len(ORIG_SRC_ROOT.drive) - 1,
+                                                                      "_"))
+    else:
+        d = ORIG_SRC_ROOT.parent / "tmp"
+    d.mkdir(parents=True, exist_ok=True)
     for k in ("TMP", "TEMP"):
         os.environ[k] = str(d)
     tempfile.tempdir = None
@@ -167,15 +176,17 @@ def canonical_tmp():
 
 
 def canonical_root(pkgs):
-    if len(str(ROOT)) == ROOT_PATH_LEN and TOOLCHAIN == ROOT / "toolchain":
+    # the original layout compiles from a root of the original length with the toolchain at <root>/toolkit (the
+    # Dinkum wrapper headers include the compiler's own headers as ../../toolkit/msvc6.0/Include/...)
+    if not ORIGINAL_LAYOUT or (len(str(ROOT)) == ROOT_PATH_LEN and TOOLCHAIN == ROOT / "toolkit"):
         return ROOT, TOOLCHAIN
     drive = staging_drive()
     dst = pathlib.Path(drive + "EEX-root".ljust(ROOT_PATH_LEN - len(drive), "_"))
     sync_tree(ROOT / "src", dst / "src")
     sync_tree(ROOT / "include", dst / "include")
     for name in [*pkgs, "dx7sdk", *LIB_DIRS]:
-        sync_tree(TOOLCHAIN / name, dst / "toolchain" / name)
-    return dst, dst / "toolchain"
+        sync_tree(TOOLCHAIN / name, dst / "toolkit" / name)
+    return dst, dst / "toolkit"
 
 
 def compile_all(jobs, out, n):
@@ -318,8 +329,8 @@ def main():
     ap.add_argument("names", nargs="*", metavar="target",
                     help=f"default: all ({' '.join(TARGETS)}; --compile-only: {' '.join(MODULES)})")
     ap.add_argument("--compile-only", action="store_true", help="compile every unit, do not link")
-    ap.add_argument("-j", type=int, default=2, help="parallel compiles (default 2)")
-    ap.add_argument("--out", default=str(ROOT / "build"), help="output root (default build/)")
+    ap.add_argument("-j", type=int, default=os.cpu_count() or 2, help="parallel compiles (default: one per CPU)")
+    ap.add_argument("--out", default=str(TARGET), help="output root (default target/)")
     ap.add_argument("--no-retail-checksum", action="store_true",
                     help="leave Low-Level Engine.dll and TCP Protocol.dll as linked (no compensation block; the "
                          "multiplayer version check then refuses retail peers)")

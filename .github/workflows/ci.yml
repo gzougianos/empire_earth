@@ -19,7 +19,7 @@ jobs:
       - name: Cache toolchain
         uses: actions/cache@v4
         with:
-          path: toolchain
+          path: toolkit
           key: toolchain-${{ hashFiles('tools/fetch_toolchain.py', 'tools/fetch_libs.py') }}
 
       - name: Fetch the compiler packages

@@ -4,7 +4,7 @@
 // _RAISE calls the imported std::_Throw, and the _TRY macros become plain blocks.
 #ifndef EE_DINKUM_XSTDDEF
 #define EE_DINKUM_XSTDDEF
-#include "../../toolchain/msvc6.0/Include/XSTDDEF"
+#include "../../toolkit/msvc6.0/Include/XSTDDEF"
 #if !defined(_CPPUNWIND) || defined(EE_DINKUM_SXL233)
  #undef _TRY_BEGIN
  #undef _CATCH

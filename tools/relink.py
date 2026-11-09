@@ -10,7 +10,7 @@ import tempfile
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import implib
 import verify
-from ee import COMPILER, MODULE_FLAGS, ROOT, module_filename, module_src, module_units
+from ee import COMPILER, MODULE_FLAGS, ORIGINAL_LAYOUT, ROOT, module_filename, module_src, module_units
 LINK_FLAGS = {
     "tcp": "/DLL /DEBUG /INCREMENTAL:NO /OPT:REF /OPT:ICF /MACHINE:I386 /SUBSYSTEM:WINDOWS /NODEFAULTLIB "
            "/BASE:0x10000000",
@@ -183,6 +183,15 @@ def relink(module, out):
 
     exp = [ln.rsplit(" @", 1) for ln in (verify.LINK_DIR / module / "exports.txt").read_text(encoding="utf-8")
            .splitlines() if ln.strip() and not ln.startswith("#")]
+    if not ORIGINAL_LAYOUT:
+        # The retail engine exports two __FILE__ string literals ("\eex\Low-Level Engine\Thread Sys...",
+        # "C:\EEX\Low-Level Engine\Graphics..."): their names encode the original build path, which only the original
+        # layout reproduces. No module imports them, so the in-checkout layout leaves them out; the other exports
+        # keep their ordinals.
+        path_strings = [name for name, _ in exp if name.startswith("??_C@") and "eex?2" in name.lower()]
+        if path_strings:
+            print(f"exports: leaving out {len(path_strings)} build-path string literal(s): {path_strings}")
+            exp = [(name, ordinal) for name, ordinal in exp if name not in path_strings]
     deffile = out / f"{module}.def"
     long = {name for name, _ in exp if len(name) == 512}
     full = {}
