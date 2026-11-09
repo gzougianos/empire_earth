@@ -6,6 +6,10 @@
 class EEComplexUnit;
 class EEGroup;
 
+// patched: the point formation's type (ee/EEFPoint.h). The original eight are 0..7 (Create); 8 is taken: EEGroup's
+// saved games write it for "no formation" and keep the current formation when they read it.
+const long kFormationPoint = 9;
+
 // one unit's place in a formation (0x14 bytes, the element of Arrange's output; the implicit operator= is the
 // out-of-line 0x1a95d6, the copy is bitwise; provisional names)
 struct EEFormationSlot {
@@ -19,6 +23,7 @@ struct EEFormationSlot {
 class EEFormation : public UReferenceCounter {
 public:
     static EEFormation* Create(long inType);   // 0xddcc6: one of the 8 formation classes (0..7), 0 otherwise
+                                               // (patched: 9, kFormationPoint, the point formation)
 
     // the inline ctor/dtor (COMDATs 0xdd7f8 / ??_G 0xdd83d, emitted by EEFCircle.cpp) and the two
     // virtuals (vtable 0x43f838: ??_G, +0x04 0xdddd5, +0x08 pure). Names are provisional.

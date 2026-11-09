@@ -796,11 +796,14 @@ bool EEPhysicsModel::Push(EEComplexUnit* inUnit, EEComplexUnit* inOther)
 // FUNCTION: EXE 0x5560cf
 // Pushes the unit against each unit it touches (PushMoving for two large mobile units, else Push) until one
 // is handled; skips closed gates and citizens working elsewhere
+// (patched: and the units it passes through, EEPassesThrough)
 void EEPhysicsModel::Collide(EEComplexUnit* inUnit)
 {
     float theSpeed = inUnit->mCollisionRadius;
     bool theCollide;
     for (UListNode<EEComplexUnit*>* theNode = inUnit->mContacts.mHead; theNode; theNode = theNode->mNext) {
+        if (EEPassesThrough(inUnit, theNode->mData))   // patched: units of a player pass through each other
+            continue;
         // each contact is judged on its own: a skip does not carry over to the next contact
         theCollide = true;
         if (theNode->mData->mIsCitizen) {
@@ -979,6 +982,30 @@ bool EEComplexUnit::IsSwimming()
 bool EEComplexUnit::HasSwimAnimation()
 {
     return this->mUnitClass->CanMoveOnTerrain(this, 1) && this->GetModel()->mFrameCounts[2] > 1;
+}
+
+// ---- patched: own units pass through each other (ee/EEPhysicsModel.h; not in the original game) ----
+// Units of one player that both can move no longer push, slow or block each other, so a crowd of them packs as
+// tightly as its orders place it (the point formation, ee/EEFPoint.h) and no unit waits behind its own side's. Two
+// citizens (land or naval) still collide, so they keep spreading around a shared resource or building site, and so
+// do two units that are both attacking a unit, so melee troops keep spreading around an enemy. Nature's units
+// (player 0: the animals) collide as before; enemies, allies, buildings, walls and gates are not affected.
+
+// whether the unit is attacking a unit (its current goal, as Push's melee test reads it)
+static bool EEIsAttackingUnit(EEComplexUnit* inUnit)
+{
+    return inUnit->mGoalState != NULL && inUnit->mGoalState->mKind == kGoalAttackUnit;
+}
+
+bool EEPassesThrough(EEComplexUnit* inUnit, EEComplexUnit* inOther)
+{
+    if (inUnit->mPlayer != inOther->mPlayer || inUnit->mPlayer == NULL || inUnit->mPlayer->mPlayerID == 0)
+        return false;
+    if (!(inUnit->mUnitClass->GetMaxVelocity() > 0.0f) || !(inOther->mUnitClass->GetMaxVelocity() > 0.0f))
+        return false;
+    if (inUnit->mIsCitizen && inOther->mIsCitizen)
+        return false;
+    return !(EEIsAttackingUnit(inUnit) && EEIsAttackingUnit(inOther));
 }
 
 // NEAR: the original compares members against a 0.0f kept in st(1) (fld member; fcomp st(1)); ours fcom [member]

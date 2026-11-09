@@ -206,6 +206,21 @@ CI (GitHub Actions, `windows-latest`) fetches the pinned toolchain and builds ev
     63; shift and control add and toggle in the same way. The selected-units panel still shows the first 35 icons,
     as before. The selection message on the network changes with it (`kMaxBoxSelection` in
     `src/Empire Earth/Communications/EEMessage.cpp` sets the limit).
+  - Own units pass through each other: two units of the same player that can both move no longer push, slow down
+    or block each other, and the pathfinder no longer steers around them, so a crowd packs as tightly as its order
+    places it and no unit waits behind its own side's. Two citizens (fishing boats too) still bump into each other,
+    so they keep spreading around a shared mine, tree or building site, and so do two units that are both attacking
+    a unit, so melee troops still spread around an enemy (a packed crowd loosens once it fights). Enemies, allies,
+    nature's animals, buildings, walls and gates collide as before. The rule holds for every player, computer
+    players included (`EEPassesThrough` in `src/Empire Earth/Physics Thread/EEPhysicsModel.cpp`).
+  - Point formation: a ninth button right of the eight formation buttons (formation 9; 8 already means "no
+    formation" in saved games) packs every selected unit into a tight round clump centred on the spot you click.
+    Each unit gets its own place on a triangular grid, half a unit's width from its neighbours (the line formations
+    stand a full width apart), so the units overlap, walking through each other to get there (see the entry above);
+    a mixed group is spaced by its largest unit. The order's marker shows only at the clicked spot. The button's
+    icon is drawn when the game starts from the game's own formation icons (none of the art is in this source); its
+    help text is in `Language.dll`. The formation lives in `src/Empire Earth/Formations/EEFormation.cpp` (`EEFPoint`),
+    the button in `src/Empire Earth/User Interface Thread/EEUIFMainGame.cpp`. A saved game keeps the formation.
   - Every change on top (new features included) may alter the simulation, the network traffic or the save format
     further. Play multiplayer only with players running the same `patched` build: share the built files rather than
     each player building their own. Saves load as on `fixes-all` until a change touches the save format.

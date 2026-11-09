@@ -68,6 +68,7 @@
 #include "ee/EEAIContinentManager.h"
 #include "ee/EEAIPathGoalModifiers.h"
 #include "ee/EEUnitUtilities.h"
+#include "ee/EEPhysicsModel.h"              // patched: EEPassesThrough
 
 // 0x248e06 (cdecl): the tile inDistance steps from (inX, inY) in direction inDirection (0..7) (provisional name)
 
@@ -233,9 +234,12 @@ inline bool EEIsCategory10Or1B(EEUnitClass* inClass)
 // FUNCTION: EXE 0x40fa75
 // Returns whether a unit blocks the sea walker: stopped, collidable, sea-going, not the walker, outside its group
 // (a naval building with air traffic always counts), and submerged or not just like the walker
+// (patched: and not one the walker passes through, EEPassesThrough)
 bool EEAIPathGoalModifierBase::IsSeaBlocker(EEComplexUnit* inUnit)
 {
     if (inUnit->mVelocity != 0.0f || inUnit == this->mGoal->mUnit)
+        return false;
+    if (EEPassesThrough(this->mGoal->mUnit, inUnit))   // patched: units of a player pass through each other
         return false;
     EEUnitClass* theClass = inUnit->GetUnitClass();
     if ((!(theClass->mDomains & kMovementSea)) || !theClass->mIsCollidable)
@@ -250,9 +254,12 @@ bool EEAIPathGoalModifierBase::IsSeaBlocker(EEComplexUnit* inUnit)
 
 // FUNCTION: EXE 0x40fb08
 // Returns whether a unit blocks the space walker: stopped, collidable, space-going, not the walker, outside its group
+// (patched: and not one the walker passes through, EEPassesThrough)
 bool EEAIPathGoalModifierBase::IsLandBlocker(EEComplexUnit* inUnit)
 {
     if (inUnit->mVelocity != 0.0f || inUnit == this->mGoal->mUnit)
+        return false;
+    if (EEPassesThrough(this->mGoal->mUnit, inUnit))   // patched: units of a player pass through each other
         return false;
     EEUnitClass* theClass = inUnit->GetUnitClass();
     if ((theClass->mDomains & kMovementSpace) && theClass->mIsCollidable &&

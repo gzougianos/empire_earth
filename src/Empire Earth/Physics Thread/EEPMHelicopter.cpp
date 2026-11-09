@@ -431,6 +431,7 @@ void EEPMHelicopter::RemoveBob(EEComplexUnit* inUnit)
 // NEAR: radius locals/frame layout
 // FUNCTION: EXE 0x559a34
 // Pushes the helicopter off the first living collidable flying unit in the tiles it covers
+// (patched: not off one it passes through, EEPassesThrough)
 void EEPMHelicopter::Collide(EEComplexUnit* inUnit)
 {
     EEMap* theMap = ::gWorld.mMap;
@@ -455,6 +456,7 @@ void EEPMHelicopter::Collide(EEComplexUnit* inUnit)
                 EEUnit* theUnit = theNode->mUnit;
                 if (theUnit == inUnit || !theUnit->mComplexUnit || theUnit->mUnitClass->FliesOver() != true
                     || !theUnit->mComplexUnit->mIsCollidable || !(theUnit->mComplexUnit->mHitPoints > 0)
+                    || EEPassesThrough(inUnit, theUnit->mComplexUnit)     // patched: units of a player pass through each other
                     || !this->Push(inUnit, theUnit->mComplexUnit))
                     continue;
                 i = theMaxX + 1;

@@ -267,6 +267,13 @@ void EEUIFMGMainGroup::ShowCommandButton(EEPlayer* inPlayer, EEUnit* inUnit, uns
         } else if (theFormation == 7) {
             theButton->SetNormalBitmap(static_cast<UIButton*>(this->GetOwner()->GetControl(kMainGameFormationOutwardCircle))->GetNormalBitmap());
             theButton->SetPressedBitmap(static_cast<UIButton*>(this->GetOwner()->GetControl(kMainGameFormationOutwardCircle))->GetPressedBitmap());
+        } else if (theFormation == kFormationPoint) {
+            // patched: the point formation's button (made in code, EEUIFMainGame.cpp; no icon: the old one stays)
+            UIButton* thePoint = static_cast<UIButton*>(this->GetOwner()->GetControl(kMainGameFormationPoint));
+            if (thePoint != NULL && thePoint->GetNormalBitmap() != NULL) {
+                theButton->SetNormalBitmap(thePoint->GetNormalBitmap());
+                theButton->SetPressedBitmap(thePoint->GetPressedBitmap());
+            }
         } else
             ESVERIFY_AT(false, 462);
     }

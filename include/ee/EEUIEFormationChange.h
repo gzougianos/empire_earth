@@ -11,7 +11,7 @@ public:
     EEUIEFormationChange(long inFormationType) { this->mFormationType = inFormationType; }
     virtual long ProcessEvent(UIForm* inForm, UIEntity* inEntity);
 
-    long mFormationType;                    // +0x0c 0..7 (EEFormation::Create)
+    long mFormationType;                    // +0x0c 0..7 (EEFormation::Create; patched: 9, the point formation)
 };
 
 #endif

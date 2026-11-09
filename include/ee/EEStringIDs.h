@@ -3721,6 +3721,8 @@
 #define IDS_UNIT_RULES_AVAILABLE                                        33109  // Available
 #define IDS_UNIT_RULES_DISABLED                                         33110  // Disabled
 #define IDS_UNIT_RULES_HINT                                             33111  // Double-click a line to move it. ...
+// patched: the point formation's button (not in the original game; ee/EEFPoint.h)
+#define IDS_ASSIGNS_POINT_FORMATION_TO_SELECTED                         33112  // Assigns point formation to selected units ...
 
 // ranges indexed by the code: _FIRST + i (_FIRST is the block's first string), _BASE + i (_BASE itself
 // is not a string: the code's index starts above 0), _COUNT strings in the block

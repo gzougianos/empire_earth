@@ -49,6 +49,7 @@
 #include "ee/EEAIAStarPathfindingGoal.h"
 #include "ee/EEAIAStarMachine.h"
 #include "ee/EEUnitUtilities.h"
+#include "ee/EEPhysicsModel.h"              // patched: EEPassesThrough
 #include "LostDebug.h"   // synthetic, NOT original source
 
 // 0x248e06 (cdecl): the tile inDistance steps from (inX, inY) in direction inDirection (0..7) (provisional name)
@@ -224,6 +225,7 @@ long EEAIAStarPathfindingGoal::GetCost(long inFromX, long inFromY, long inX, lon
 // FUNCTION: EXE 0x419595
 // Returns the default step cost: 10 straight or 14 diagonal, plus 50/150 per idle or attacking unit in the way, doubled
 // for wide formation units when a tile a rank away is blocked, impassable or off-continent (tests (inX, inY))
+// (patched: no cost for a unit the walker passes through, EEPassesThrough)
 long EEAIAStarPathfindingGoal::GetDefaultCost(long inFromX, long inFromY, long inX, long inY)
 {
     EEMapTile* theTile;
@@ -244,6 +246,8 @@ long EEAIAStarPathfindingGoal::GetDefaultCost(long inFromX, long inFromY, long i
             if (!theUnit || theUnit == this->mUnit || !theUnit->GetUnitClass()->mIsCollidable || theUnit->IsFoundation())
                 continue;
             if (theUnit->mActiveGroup && theUnit->mActiveGroup == this->mUnit->mActiveGroup && theUnit->mCollisionRadius < kEEPFGFull)
+                continue;
+            if (EEPassesThrough(this->mUnit, theUnit))   // patched: units of a player pass through each other
                 continue;
             if ((theUnit->mCommand ? theUnit->mCommand->mType : 0) != kActionIdle
                 && (theUnit->mCommand ? theUnit->mCommand->mType : 0) != kActionAttackEnemyUnit)

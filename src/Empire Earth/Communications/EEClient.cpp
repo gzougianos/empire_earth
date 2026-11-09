@@ -763,8 +763,10 @@ void EESendGroupCommand(EEGroup* inGroup, EEUnit* inTarget, unsigned long inPlay
     unsigned long i;
     for (i = 0; i < inGroup->GetNumUnits(); i++) {
         EEComplexUnit* theUnit = inGroup->GetUnit(i);
+        // patched: a point formation's tight clump gets one marker, its first slot's (the clicked spot)
         if ((theFormation != 0 || !(theUnit->mFormationSlot < 15)) && (theFormation != 1 || !(theUnit->mFormationSlot < 20)) &&
-            ((theFormation != 6 && theFormation != 7) || i % theStep != 0))
+            ((theFormation != 6 && theFormation != 7) || i % theStep != 0) &&
+            (theFormation != kFormationPoint || theUnit->mFormationSlot != 0))
             continue;
         EEUnitClass* theClass = theUnit->mUnitClass;
         if (theClass->mAIKind == kAIKindAircraftCarrier || theClass->mAIKind == kAIKindSpaceCarrier || theClass->mUnitType == kUnitTypeAirport) {

@@ -359,6 +359,7 @@ void EEPMSubmergedNaval::AfterStep(EEComplexUnit* inUnit)
 // FUNCTION: EXE 0x5600ec
 // Collides the submarine with living submarines and sea animals on the tiles it covers, stopping at the
 // first contact that is handled
+// (patched: not with one it passes through, EEPassesThrough)
 void EEPMSubmergedNaval::Collide(EEComplexUnit* inUnit)
 {
     EEMap* theMap = ::gWorld.mMap;
@@ -384,7 +385,8 @@ void EEPMSubmergedNaval::Collide(EEComplexUnit* inUnit)
                 EEComplexUnit* theOther = theUnit->mComplexUnit;
                 if (theUnit == inUnit || !theOther
                     || (theUnit->mUnitClass->mCategory != kUnitCategorySubmergedNaval && theUnit->mUnitClass->mCategory != kUnitCategorySeaAnimal)
-                    || !theOther->mIsCollidable || !(theOther->mHitPoints > 0))
+                    || !theOther->mIsCollidable || !(theOther->mHitPoints > 0)
+                    || EEPassesThrough(inUnit, theOther))   // patched: units of a player pass through each other
                     continue;
                 bool theHit;
                 if (theOther->mUnitClass->mInnerCollisionSphere >= kPMMinimumSpeed && theRadius >= kPMMinimumSpeed)

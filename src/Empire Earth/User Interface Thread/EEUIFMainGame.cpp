@@ -113,6 +113,15 @@
 #include "ee/EEUISCIFormManager.h"
 #include "ee/EEUIFMGMainGroup.h"
 #include "ee/EEStringIDs.h"
+#include <math.h>                           // patched: the point formation's button (end of this file)
+#include "ee/EEFormation.h"                 // likewise
+#include "ee/EEUIEFormationChange.h"        // likewise
+
+// patched: the point formation's button (formation 9; made, moved and deleted here: the end of this file)
+static void EECreatePointFormationButton(UIForm* inForm);
+static void EEMovePointFormationButton(UIForm* inForm);
+static void EEDeletePointFormationButton(UIForm* inForm);
+
 // the status buttons' availability tests (EEUIFMGStatusButton.cpp's range) (provisional names)
 long EEModeAtomicBomberRally(void* inLocation, void* inForm);
 long EEModeParatrooperRally(void* inLocation, void* inForm);
@@ -751,7 +760,7 @@ void EEUIFMainGame::SetStatusText(const UWideString& inText)
 
 // FUNCTION: EXE 0x664cf1
 // Closes the form: hides the messages, gives the graphics thread the UI render object back and unloads the
-// background media
+// background media (patched: and deletes the point formation's button, after the form's events have run)
 void EEUIFMainGame::Close()
 {
     this->HideMessages();
@@ -762,6 +771,15 @@ void EEUIFMainGame::Close()
     this->UpdateBackgroundMedia(false);
     gSoundManager->SetLatency(200);
     UIForm::Close();
+    EEDeletePointFormationButton(this);
+}
+
+// patched: lays the form out again (UIForm::RelayoutForm moves only the database's controls), then moves the point
+// formation's button after the eighth formation button
+void EEUIFMainGame::RelayoutForm(const GERectangle& inRectangle)
+{
+    UIForm::RelayoutForm(inRectangle);
+    EEMovePointFormationButton(this);
 }
 
 // FUNCTION: EXE 0x664d40
@@ -1320,6 +1338,7 @@ void EEUIFMainGame::Open()
     this->GetControl(kMainGameCancelUIMode)->SetTriggerEvent(kControlTriggerButtonUp, theEvent);
     this->GetControl(kMainGameCancelUIMode)->SetTriggerEvent(kControlTriggerRightButtonUp, theEvent);
     theEvent->Dereference();
+    EECreatePointFormationButton(this);     // patched: before the main group shows the formation command's icon
     EESetCivBuilderButtonBlinking(this->mIsButtonBlinking);
     EEUISCIFormManager::Get()->SetBlinking(this->mInfoBlinking);
     this->mUnitHack->FillComboBox();
@@ -1899,4 +1918,413 @@ void EEUIFMGUnitHack::FnE123D()
 
 void EEUIFMainGame::FnE123D()
 {
+}
+
+// ---- patched: the point formation's button (formation 9, ee/EEFPoint.h; not in the original game) ----
+// The UI database has eight formation buttons in a row (entity group 8, over the backdrop 0x98, opened by the
+// formation command button). The ninth is made here on each Open at kMainGameFormationPoint (a slot past the
+// database's), right of the eighth and as large, in the same entity group, so it shows and hides with them; Close
+// deletes it (UIForm::Close deletes only database controls) and RelayoutForm moves it as the database's move. It draws
+// its own piece of the backdrop (0x98 is a plain black rectangle at 0.6 opacity over the eight). Its icon is made from
+// the player's game data, so none of it is in this source: the octagon face of the eight formation icons
+// (textures\act_*_up.sst, _down.sst for pressed: at each pixel the mean of the icons that show no peg there, the pegs
+// found against the eight's medoid and grown by a pixel, the few pixels every icon covers filled down the column)
+// with seven pegs cut out of the short line icon set in a tight hexagon at the centre. Without those icons it draws
+// seven dots instead, and the formation command button keeps its last icon.
+
+static const unsigned long kPointButtonID = 9009;       // a control id no database control of the form uses
+static const unsigned long kFormationButtonGroup = 8;   // the formation buttons' entity group
+static const float kPointBackdropOpacity = 0.6f;        // the backdrop 0x98's opacity
+static const long kIconSize = 64;                       // the formation icons' size
+static const long kPegThreshold = 60;                   // a peg pixel differs by more (summed over B, G, R, A)
+static const char* const kFormationIconNames[8] = {
+    "short", "long", "loose", "staggered", "deepwedge", "shallowwedge", "circlein", "circleout"
+};
+// the seven pegs: the centre, then a hexagon of pitch 9 (the short line's peg pitch), in drawing order
+static const float kPegSpots[7][2] = {
+    {0.0f, 0.0f}, {9.0f, 0.0f}, {4.5f, 7.7942286f}, {-4.5f, 7.7942286f}, {-9.0f, 0.0f}, {-4.5f, -7.7942286f},
+    {4.5f, -7.7942286f}
+};
+
+static long EEPixelDistance(const unsigned char* inA, const unsigned char* inB)
+{
+    long theSum = 0;
+    for (long c = 0; c < 4; c++)
+        theSum += inA[c] > inB[c] ? inA[c] - inB[c] : inB[c] - inA[c];
+    return theSum;
+}
+
+// Reads a formation icon (textures\act_<name>_<state>.sst: 15 bytes, then an uncompressed 32-bit 64x64 TGA) as
+// top-down BGRA; false when it is missing or not that format
+static bool EEReadFormationIcon(FSPath* inPath, const char* inName, const char* inState, unsigned char* outPixels)
+{
+    char theName[64];
+    FSFileSpec* theFile = NULL;
+    bool theResult = false;
+    long y;
+    sprintf(theName, "textures\\act_%s_%s.sst", inName, inState);
+    if (inPath->FindFile(UString(theName), theFile) != kErrorOK || theFile == NULL)
+        return false;
+    if (theFile->Open(kFileAccessRead) == kErrorOK) {
+        unsigned long theLength = 0;
+        unsigned long theRead = 0;
+        theFile->GetLength(theLength);
+        if (theLength >= 15 + 18 && theLength <= 0x100000) {
+            unsigned char* theData = new unsigned char[theLength];
+            if (theFile->Read(theData, theLength, theRead) == kErrorOK && theRead == theLength) {
+                const unsigned char* theHeader = theData + 15;
+                unsigned long theStart = 15 + 18 + theHeader[0];
+                long theWidth = theHeader[12] | (theHeader[13] << 8);
+                long theHeight = theHeader[14] | (theHeader[15] << 8);
+                if (theHeader[1] == 0 && theHeader[2] == 2 && theHeader[16] == 32 && theWidth == kIconSize
+                    && theHeight == kIconSize && theStart + kIconSize * kIconSize * 4 <= theLength) {
+                    bool theTopDown = (theHeader[17] & 0x20) != 0;
+                    for (y = 0; y < kIconSize; y++)
+                        memcpy(outPixels + y * kIconSize * 4,
+                               theData + theStart + (theTopDown ? y : kIconSize - 1 - y) * kIconSize * 4, kIconSize * 4);
+                    theResult = true;
+                }
+            }
+            delete[] theData;
+        }
+        theFile->Close();
+    }
+    delete theFile;
+    return theResult;
+}
+
+// Builds the point formation's icon for a state ("up", "down") as top-down BGRA; false without the eight icons
+static bool EEMakePointFormationIcon(FSPath* inPath, const char* inState, unsigned char* outPixels)
+{
+    const long thePixels = kIconSize * kIconSize;
+    unsigned char* theIcons = new unsigned char[8 * thePixels * 4];
+    unsigned char* theMedoid = new unsigned char[thePixels * 4];
+    unsigned char* theCovered = new unsigned char[8 * thePixels];
+    unsigned char* theHoles = new unsigned char[thePixels];
+    long thePegX[14 * 13];
+    long thePegY[14 * 13];
+    long thePegCount = 0;
+    bool theResult = true;
+    long i, j, k, c, x, y, dx, dy;
+    for (k = 0; k < 8 && theResult; k++)
+        theResult = EEReadFormationIcon(inPath, kFormationIconNames[k], inState, theIcons + k * thePixels * 4);
+    if (theResult) {
+        // the medoid of the eight at each pixel: the face where most icons show it
+        for (i = 0; i < thePixels; i++) {
+            long theBest = 0;
+            long theBestSum = -1;
+            for (k = 0; k < 8; k++) {
+                long theSum = 0;
+                for (j = 0; j < 8; j++)
+                    theSum += EEPixelDistance(theIcons + (k * thePixels + i) * 4, theIcons + (j * thePixels + i) * 4);
+                if (theBestSum < 0 || theSum < theBestSum) {
+                    theBestSum = theSum;
+                    theBest = k;
+                }
+            }
+            memcpy(theMedoid + i * 4, theIcons + (theBest * thePixels + i) * 4, 4);
+        }
+        // each icon's pegs, grown by a pixel
+        memset(theCovered, 0, 8 * thePixels);
+        for (k = 0; k < 8; k++) {
+            for (y = 0; y < kIconSize; y++) {
+                for (x = 0; x < kIconSize; x++) {
+                    i = y * kIconSize + x;
+                    if (EEPixelDistance(theIcons + (k * thePixels + i) * 4, theMedoid + i * 4) <= kPegThreshold)
+                        continue;
+                    for (dy = -1; dy <= 1; dy++)
+                        for (dx = -1; dx <= 1; dx++)
+                            if (x + dx >= 0 && x + dx < kIconSize && y + dy >= 0 && y + dy < kIconSize)
+                                theCovered[k * thePixels + (y + dy) * kIconSize + x + dx] = 1;
+                }
+            }
+        }
+        // the face: the mean of the icons without a peg at the pixel; a hole where every icon has one
+        for (i = 0; i < thePixels; i++) {
+            long theSum[4] = {0, 0, 0, 0};
+            long theCount = 0;
+            for (k = 0; k < 8; k++) {
+                if (theCovered[k * thePixels + i])
+                    continue;
+                for (c = 0; c < 4; c++)
+                    theSum[c] += theIcons[(k * thePixels + i) * 4 + c];
+                theCount++;
+            }
+            theHoles[i] = theCount == 0;
+            for (c = 0; c < 4; c++)
+                outPixels[i * 4 + c] = theCount != 0 ? (unsigned char)(theSum[c] / theCount) : theMedoid[i * 4 + c];
+        }
+        // the holes, filled down the column between the nearest face pixels above and below
+        for (x = 0; x < kIconSize; x++) {
+            for (y = 0; y < kIconSize; y++) {
+                if (!theHoles[y * kIconSize + x])
+                    continue;
+                long theAbove = y - 1;
+                long theBelow = y + 1;
+                while (theAbove >= 0 && theHoles[theAbove * kIconSize + x])
+                    theAbove--;
+                while (theBelow < kIconSize && theHoles[theBelow * kIconSize + x])
+                    theBelow++;
+                if (theAbove < 0 && theBelow >= kIconSize)
+                    continue;
+                for (c = 0; c < 4; c++) {
+                    long theValue;
+                    if (theAbove < 0)
+                        theValue = outPixels[(theBelow * kIconSize + x) * 4 + c];
+                    else if (theBelow >= kIconSize)
+                        theValue = outPixels[(theAbove * kIconSize + x) * 4 + c];
+                    else {
+                        long theUpper = outPixels[(theAbove * kIconSize + x) * 4 + c];
+                        long theLower = outPixels[(theBelow * kIconSize + x) * 4 + c];
+                        theValue = theUpper + (theLower - theUpper) * (y - theAbove) / (theBelow - theAbove);
+                    }
+                    outPixels[(y * kIconSize + x) * 4 + c] = (unsigned char)theValue;
+                }
+            }
+        }
+        // the short line icon's upper left peg: its pixels off the face in x 10..23, y 20..32
+        const unsigned char* theShort = theIcons;
+        long theLeft = kIconSize;
+        long theTop = kIconSize;
+        long theRight = -1;
+        long theBottom = -1;
+        for (y = 20; y <= 32; y++) {
+            for (x = 10; x <= 23; x++) {
+                i = y * kIconSize + x;
+                if (EEPixelDistance(theShort + i * 4, outPixels + i * 4) <= kPegThreshold)
+                    continue;
+                thePegX[thePegCount] = x;
+                thePegY[thePegCount] = y;
+                thePegCount++;
+                theLeft = min(theLeft, x);
+                theTop = min(theTop, y);
+                theRight = max(theRight, x);
+                theBottom = max(theBottom, y);
+            }
+        }
+        // set seven times round the centre
+        if (thePegCount > 0) {
+            float theCenterX = (theLeft + theRight) * 0.5f;
+            float theCenterY = (theTop + theBottom) * 0.5f;
+            for (k = 0; k < 7; k++) {
+                dx = (long)floor(31.5f + kPegSpots[k][0] - theCenterX + 0.5f);
+                dy = (long)floor(31.5f + kPegSpots[k][1] - theCenterY + 0.5f);
+                for (j = 0; j < thePegCount; j++) {
+                    x = thePegX[j] + dx;
+                    y = thePegY[j] + dy;
+                    if (x >= 0 && x < kIconSize && y >= 0 && y < kIconSize)
+                        memcpy(outPixels + (y * kIconSize + x) * 4, theShort + (thePegY[j] * kIconSize + thePegX[j]) * 4, 4);
+                }
+            }
+        }
+    }
+    delete[] theIcons;
+    delete[] theMedoid;
+    delete[] theCovered;
+    delete[] theHoles;
+    return theResult;
+}
+
+// Makes a texture in the UI's depth from a 64x64 top-down BGRA icon; NULL when it cannot
+static GETexture* EEMakeIconTexture(UIManager* inManager, const unsigned char* inPixels)
+{
+    GETextureManager* theManager = inManager->GetRasterizer()->GetTextureManager(inManager->GetScreen());
+    GESurfaceDescription theDescription;
+    GESurface* theSurface = NULL;
+    GETexture* theTexture = NULL;
+    bool theWritten = false;
+    long x, y;
+    theDescription.mType = kSurfaceTexture;
+    theDescription.mWidth = kIconSize;
+    theDescription.mHeight = kIconSize;
+    theDescription.m14 = 0;
+    theDescription.mMipLevelCount = 0;
+    theDescription.mSurfaceVolatility = 1;
+    theDescription.mIs3DRenderable = false;
+    theDescription.mIsTransparencyEnabled = false;
+    if (inManager->GetUITextureBitDepth() == 32) {
+        theDescription.mPixelFormat = kPixelFormatA8R8G8B8;
+        theDescription.mPixelDepth = 32;
+    } else {
+        theDescription.mPixelFormat = kPixelFormatA4R4G4B4;
+        theDescription.mPixelDepth = 16;
+    }
+    if (theManager == NULL || theManager->GetScreen() == NULL
+        || theManager->GetScreen()->CreateSurface(theDescription, &theSurface) != kErrorOK || theSurface == NULL)
+        return NULL;
+    if (theSurface->Lock() == kErrorOK) {
+        unsigned char* theMemory = theSurface->GetMemoryAddress();
+        unsigned long theRowBytes = theSurface->GetBytesPerRow();
+        unsigned long theFormat = theSurface->GetPixelFormat();
+        theWritten = theMemory != NULL;
+        for (y = 0; y < kIconSize && theWritten; y++) {
+            unsigned char* theRow = theMemory + y * theRowBytes;
+            for (x = 0; x < kIconSize && theWritten; x++) {
+                const unsigned char* thePixel = inPixels + (y * kIconSize + x) * 4;
+                unsigned long b = thePixel[0];
+                unsigned long g = thePixel[1];
+                unsigned long r = thePixel[2];
+                unsigned long a = thePixel[3];
+                switch (theFormat) {
+                case kPixelFormatA8R8G8B8:
+                case kPixelFormatX8R8G8B8:
+                    reinterpret_cast<unsigned long*>(theRow)[x] = (a << 24) | (r << 16) | (g << 8) | b;
+                    break;
+                case kPixelFormatA4R4G4B4:
+                    reinterpret_cast<unsigned short*>(theRow)[x] =
+                        (unsigned short)(((a >> 4) << 12) | ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4));
+                    break;
+                case kPixelFormatA1R5G5B5:
+                    reinterpret_cast<unsigned short*>(theRow)[x] =
+                        (unsigned short)(((a >= 128 ? 1 : 0) << 15) | ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3));
+                    break;
+                case kPixelFormatR5G6B5:
+                    reinterpret_cast<unsigned short*>(theRow)[x] =
+                        (unsigned short)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+                    break;
+                default:
+                    theWritten = false;
+                    break;
+                }
+            }
+        }
+        theSurface->Unlock();
+    }
+    if (theWritten)
+        theTexture = theManager->MakeTexture(theSurface);
+    theSurface->Dereference();
+    return theTexture;
+}
+
+// The ninth formation button: the point formation's icon over its own piece of the backdrop, and the help text of the
+// others' kind (with an English fallback while Language.dll lacks it)
+class EEUIFMGPointFormationButton : public UIButton {
+public:
+    EEUIFMGPointFormationButton(UIForm* inForm, const GERectangle& inRectangle, GEBitmap* inNormal, GEBitmap* inPressed)
+        : UIButton(kPointButtonID, inNormal, NULL, inPressed, inRectangle, inForm, kMainGameFormationPoint, 0)
+    {
+    }
+    virtual ~EEUIFMGPointFormationButton() {}
+    virtual long DrawPolygons()
+    {
+        // the backdrop 0x98 draws its right and bottom edges a pixel out: from a pixel in on the left, so the column
+        // the two share is not darkened twice
+        GERhombus theRhombus;
+        GERectangle theRectangle = this->mCopiedDrawRectangle;
+        theRectangle.SetLeft(theRectangle.GetLeft() + 1.0f);
+        theRectangle.SetRight(theRectangle.GetRight() + 1.0f);
+        theRectangle.SetBottom(theRectangle.GetBottom() + 1.0f);
+        theRhombus.SetColor(GEColor(0.0f, 0.0f, 0.0f));
+        theRhombus.SetOpacity(kPointBackdropOpacity);
+        theRhombus.SetRectangle(theRectangle);
+        this->GetRasterizer()->Draw(&theRhombus, this->GetScreenIndex());
+        long theResult = UIButton::DrawPolygons();
+        if (this->GetNormalBitmap() == NULL) {
+            // no icon: seven dots
+            GERectangle theButton = this->mCopiedDrawRectangle;
+            float theScale = (theButton.GetRight() - theButton.GetLeft()) / (float)kIconSize;
+            float theCenterX = (theButton.GetLeft() + theButton.GetRight()) * 0.5f;
+            float theCenterY = (theButton.GetTop() + theButton.GetBottom()) * 0.5f;
+            float theHalf = 3.5f * theScale;
+            for (long i = 0; i < 7; i++) {
+                float theX = theCenterX + kPegSpots[i][0] * theScale;
+                float theY = theCenterY + kPegSpots[i][1] * theScale;
+                theRhombus.SetColor(GEColor(0.85f, 0.7f, 0.25f));
+                theRhombus.SetOpacity(1.0f);
+                theRhombus.SetRectangle(GERectangle(theX - theHalf, theY - theHalf, theX + theHalf, theY + theHalf));
+                this->GetRasterizer()->Draw(&theRhombus, this->GetScreenIndex());
+            }
+        }
+        return theResult;
+    }
+    virtual bool GetHelpString(UWideString& outString) const
+    {
+        outString = "";
+        if (gResource == NULL || gResource->GetString(IDS_ASSIGNS_POINT_FORMATION_TO_SELECTED, outString) != kErrorOK
+            || outString.GetLength() == 0)
+            outString = "Assigns point formation to selected units: they all go to the same spot and gather around it";
+        return true;
+    }
+};
+
+// The ninth button's place: the eighth formation button's, moved right by its width (the database lays the eight
+// out that way); false without the eighth
+static bool EEGetPointFormationRectangle(UIForm* inForm, GERectangle& outRectangle)
+{
+    UIControl* theEighth = inForm->GetControl(kMainGameFormationOutwardCircle);
+    if (theEighth == NULL)
+        return false;
+    outRectangle = theEighth->GetRectangle();
+    float theWidth = outRectangle.GetRight() - outRectangle.GetLeft();
+    outRectangle.SetLeft(outRectangle.GetLeft() + theWidth);
+    outRectangle.SetRight(outRectangle.GetRight() + theWidth);
+    return true;
+}
+
+// Makes the point formation's button (Open, after the database's controls)
+static void EECreatePointFormationButton(UIForm* inForm)
+{
+    static const char* const kStates[2] = {"up", "down"};
+    GERectangle theRectangle;
+    GEBitmap* theBitmaps[2] = {NULL, NULL};
+    long i;
+    if ((unsigned long)kMainGameFormationPoint >= inForm->GetControlCount()
+        || inForm->GetControl(kMainGameFormationPoint) != NULL || !EEGetPointFormationRectangle(inForm, theRectangle))
+        return;
+    UIManager* theManager = inForm->GetManager();
+    GETextureManager* theTextures = theManager->GetRasterizer()->GetTextureManager(theManager->GetScreen());
+    FSPath* thePath = theTextures != NULL ? theTextures->GetTexturePath() : NULL;
+    unsigned char* thePixels = new unsigned char[kIconSize * kIconSize * 4];
+    for (i = 0; i < 2 && thePath != NULL; i++) {
+        if (!EEMakePointFormationIcon(thePath, kStates[i], thePixels))
+            break;
+        GETexture* theTexture = EEMakeIconTexture(theManager, thePixels);
+        if (theTexture == NULL)
+            break;
+        theBitmaps[i] = new GEBitmap;
+        theBitmaps[i]->SetTexture(theTexture, theManager->GetScreen());
+        theBitmaps[i]->ComputeStretchedCoordsAndScale(theRectangle, theRectangle,
+            GERectangle(0.0f, 0.0f, (float)(kIconSize - 1), (float)(kIconSize - 1)), theManager->GetScreen());
+    }
+    delete[] thePixels;
+    if (theBitmaps[1] == NULL && theBitmaps[0] != NULL) {
+        // no pressed icon: the normal one for both
+        theBitmaps[1] = theBitmaps[0];
+        theBitmaps[1]->Reference();
+    }
+    EEUIFMGPointFormationButton* theButton = new EEUIFMGPointFormationButton(inForm, theRectangle, theBitmaps[0],
+                                                                             theBitmaps[1]);
+    for (i = 0; i < 2; i++)
+        if (theBitmaps[i] != NULL)
+            theBitmaps[i]->Dereference();
+    theButton->SetButtonDownSound(UString("sounds\\button1.wav"));
+    theButton->SetAlwaysDirty(true);
+    UIEvent* theEvent = new EEUIEFormationChange(kFormationPoint);
+    theButton->SetTriggerEvent(kControlTriggerButtonUp, theEvent);
+    theEvent->Dereference();
+    inForm->AddControl(theButton, kFormationButtonGroup);
+    theButton->SetDisplayMode(kDisplayModeShown);
+}
+
+// Moves the point formation's button after the eighth formation button (RelayoutForm)
+static void EEMovePointFormationButton(UIForm* inForm)
+{
+    GERectangle theRectangle;
+    if ((unsigned long)kMainGameFormationPoint >= inForm->GetControlCount())
+        return;
+    UIControl* theButton = inForm->GetControl(kMainGameFormationPoint);
+    if (theButton != NULL && EEGetPointFormationRectangle(inForm, theRectangle))
+        theButton->SetRectangle(theRectangle);
+}
+
+// Deletes the point formation's button (Close, after UIForm::Close has run the form's events)
+static void EEDeletePointFormationButton(UIForm* inForm)
+{
+    if ((unsigned long)kMainGameFormationPoint >= inForm->GetControlCount())
+        return;
+    UIControl* theButton = inForm->GetControl(kMainGameFormationPoint);
+    if (theButton == NULL)
+        return;
+    inForm->RemoveControl(theButton, kFormationButtonGroup);
+    delete theButton;
 }

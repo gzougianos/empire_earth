@@ -418,6 +418,9 @@ enum EEMainGameControl {
     kMainGameFormationOutwardCircle = 243,  // dbuicontrols form 11 index 243 id 3115 'SRM Formation Outward Circle' (type 1); site form via NormalBitmap(((UIButton*)gUIManager->mMa
     kMainGameCancelUIMode = 244,          // dbuicontrols form 11 index 244 id 3226 'SRM Cancel UI Mode' (type 31); site form via theForm
     kMainGamePreviousMessages = 253,      // dbuicontrols form 11 index 253 id 3270 'SRMPrevious Messages*' (type 1); site form via this
+    // patched: the point formation's button, not in the database (the form has 300 slots, the database uses up to
+    // 254): EEUIFMainGame.cpp makes it on Open, right of the eight formation buttons, and deletes it on Close
+    kMainGameFormationPoint = 255,
 };
 
 // Control indices (UIForm::GetControl: the control's index in the form, dbuicontrols +0x29c) of form 12 'Main Menu

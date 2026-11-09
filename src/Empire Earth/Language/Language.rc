@@ -4910,6 +4910,12 @@ BEGIN
     33111, L"Double-click a line to move it. Disabling something also disables what needs it; enabling it also enables what it needs."
 END
 
+// patched: the point formation's button (not in the original game)
+STRINGTABLE
+BEGIN
+    33112, L"Assigns point formation to selected units: they all go to the same spot and gather around it"
+END
+
 STRINGTABLE
 BEGIN
     5536, L"Lt. Stock"

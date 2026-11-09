@@ -45,6 +45,7 @@
 #include "ee/EEAIContinentManager.h"
 #include "ee/EEAIPathGoalModifierBase.h"
 #include "ee/EEAIAStarPathfindingGoalBase.h"
+#include "ee/EEPhysicsModel.h"              // patched: EEPassesThrough
 
 void EEGetUnitTiles(EEUnit* inUnit, std::vector<U2DPoint<long> >& ioPoints, float inArg);  // 0x248fe4 (cdecl) (provisional name)
 
@@ -213,9 +214,12 @@ EEAIPathBlockerCollector::EEAIPathBlockerCollector(EEComplexUnit* inUnit, std::v
 // FUNCTION: EXE 0x419e38
 // Adds a contact's tiles as blockers when it is a stopped sea unit of the walker's naval kind, not the walker and
 // not in its group (naval buildings with air traffic always count); always returns false
+// (patched: nor one the walker passes through, EEPassesThrough)
 bool EEAIPathBlockerCollector::Add(EEComplexUnit* inUnit)
 {
     if (inUnit->GetVelocity() != 0.0f || (!(inUnit->mUnitClass->mDomains & kMovementSea)) || this->mUnit == inUnit)
+        return false;
+    if (EEPassesThrough(this->mUnit, inUnit))      // patched: units of a player pass through each other
         return false;
     // STAND-IN (owner 2026-11-01): the (bool) cast on the naval comparison (docs/LOST_DEBUG.md; 65 -> 74)
     if ((bool)(inUnit->mUnitClass->mCategory == kUnitCategorySubmergedNaval || inUnit->mUnitClass->mCategory == kUnitCategorySeaAnimal) != this->mNaval)

@@ -46,6 +46,8 @@ public:
     virtual long CopyData();                // +0x3c 0x264dc4
     virtual long DrawPolygons();            // +0x40 0x26550c
     virtual void Open();                    // +0x48 0x266038
+    // patched: UIForm's, then the point formation's button follows the formation buttons (EEUIFMainGame.cpp)
+    virtual void RelayoutForm(const GERectangle& inRectangle);
 
     // the saved game's main-form state (EEPWorldHelper's Load 0x14c39b / Save 0x14c525 call them; provisional
     // names)

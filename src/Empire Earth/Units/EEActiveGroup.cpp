@@ -359,6 +359,7 @@ void EEActiveGroup::LayOutFormation()
         theFormation->mOrientation.SetOrientationYPR(theYaw, 0.0f, 0.0f);
     }
     theFormation->Arrange(this, theSlots);
+    bool thePoint = theFormation->GetType() == kFormationPoint;   // patched: the point formation (ee/EEFPoint.h)
     unsigned long theNumSlots = theSlots.size();
     unsigned long i;
     i = 0;
@@ -493,7 +494,8 @@ void EEActiveGroup::LayOutFormation()
             continue;
         if (theUnit->mFormationSlot != i)
             theUnit->mFormationSlot = i;
-        theUnit->mFormationRank = (long)((float)i / theSlotCount * 4.0f);
+        // patched: a point formation's clump has no ranks (they keep a wide formation's back rows clear of obstacles)
+        theUnit->mFormationRank = thePoint ? 0 : (long)((float)i / theSlotCount * 4.0f);
         if (theUnit->GetGoal() == NULL)
             theFree++;
         switch (this->mGoal->mKind) {

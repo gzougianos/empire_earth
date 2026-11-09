@@ -13,6 +13,13 @@ class GE3DPoint;
 class GETransformation;
 class EEPMLand;
 
+// patched: whether two units pass through each other instead of colliding (not in the original game): units of one
+// player (not nature's) that both can move, unless both are citizens (land or naval: they keep spreading around a
+// shared resource or building site) or both are attacking a unit (melee troops keep spreading around an enemy).
+// Symmetric. The physics models skip such contacts (no push, no slowing, no blocking unit) and the pathfinders do not
+// route around such units. Defined in Physics Thread/EEPhysicsModel.cpp.
+bool EEPassesThrough(EEComplexUnit* inUnit, EEComplexUnit* inOther);
+
 class EEPhysicsModel {
 public:
     virtual ~EEPhysicsModel() {}                                                        // +0x00 (??_G 0x156ddb)
