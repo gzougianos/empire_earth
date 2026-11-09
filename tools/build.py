@@ -7,7 +7,8 @@ Targets (default: all): tcp mixer default lle dx7hr dx7hrtnl language exe. Each 
 out: target/): TCP Protocol.dll, Miles Sound System Mixer.dll, Default.dll, Low-Level Engine.dll (with libjpeg, module
 jpeg), DX7HRDisplay.dll, DX7HRTnLDisplay.dll, Language.dll (resources only) and EE-AOC.exe (with the image libraries,
 module exeimg, and the WON library, module won), each with its .map and .pdb. The DLLs link with tools/relink.py, the executable with
-tools/exe_fulllink.py (link_exe), the resources compile with tools/rsrc_rebuild.py.
+tools/exe_fulllink.py (link_exe), the resources compile with tools/rsrc_rebuild.py. Every image that links is also
+copied to <out>/flatten/, all side by side, to copy into the game's folder by hand.
 
 --compile-only modules (default: all): tcp mixer default lle jpeg dx7hr dx7hrtnl exeimg won exe.
 
@@ -324,6 +325,25 @@ def link_exe(out, objs):
     return 0 if ok else 1
 
 
+def image_path(out, target):
+    return out / target / ("Language.dll" if target == "language" else relink.module_filename(target))
+
+
+def flatten(out, results):
+    """Copy every image this build linked into <out>/flatten/, side by side, ready to copy into the game's folder by
+    hand. An image whose link failed is removed from there, so flatten/ never holds a stale copy of it; images of
+    targets this build did not link are left as they are."""
+    dst = out / "flatten"
+    dst.mkdir(parents=True, exist_ok=True)
+    for t, code in results.items():
+        src = image_path(out, t)
+        if code == 0:
+            shutil.copy2(src, dst / src.name)
+        else:
+            (dst / src.name).unlink(missing_ok=True)
+    return dst
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("names", nargs="*", metavar="target",
@@ -404,10 +424,12 @@ def main():
                 compensate(t, out)
     if hook.compiled:
         print(f"note: {len(hook.compiled)} source(s) compiled during the link: {hook.compiled[:5]}")
+    flat = flatten(out, results)
     print()
     for t in targets:
         print(f"{t:9} {'ok' if results[t] == 0 else 'FAILED'}")
     print(f"built in {time.time() - t0:.0f} s -> {out}")
+    print(f"images side by side: {flat}")
     sys.exit(1 if any(results.values()) else 0)
 
 

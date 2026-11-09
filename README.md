@@ -87,7 +87,7 @@ written anywhere else:
 |---|---|
 | `toolkit/` | portable Python 3.12 and 7-Zip, the VC6 compiler packages, the SDK headers and link libraries, the download cache (`toolkit/dl/`) |
 | `workdir/` | the staged sources (`workdir/EEX/`) and every tool's temporary files (`workdir/tmp/`) |
-| `target/` | the built images and their object files |
+| `target/` | the built images and their object files; `target/flatten/` holds just the images, side by side |
 
 Requirements: Windows 10 (1803 or later) or 11, whose own `curl.exe`, `tar.exe` and `certutil` the setup uses (the
 32-bit VC6 tools run natively on 64-bit Windows), about 3 GB of free disk space while the libraries are extracted
@@ -138,6 +138,10 @@ Requirements: Windows 10 (1803 or later) or 11, whose own `curl.exe`, `tar.exe` 
    | `dx7hrtnl` | `target/dx7hrtnl/DX7HRTnLDisplay.dll` |
    | `language` | `target/language/Language.dll` |
    | `exe` | `target/exe/EE-AOC.exe` (with the image libraries) |
+
+   Every image that links is also copied to `target/flatten/`, all eight side by side (no `.map`, `.pdb` or link
+   files), to copy into the game's folder by hand. An image whose link fails is removed from there, so it never holds
+   a stale copy; building only some targets refreshes only theirs.
 
    Objects go to `target/obj/<module>/`; `--out DIR` puts everything under `DIR` instead of `target/`. A full build
    compiles 845 units and links 8 images.
