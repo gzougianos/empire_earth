@@ -539,8 +539,8 @@ void EEPlayUnitEffect(EEComplexUnit* inUnit, long inEffect)
 }
 
 // FUNCTION: EXE 0x60d10e
-// Answers the citizen triggers: starts the next queued build, build queue empty, smart task not assigned (true when
-// it has a goal), goal is repair; gather and build triggers go to the active goal (2 when not the main goal)
+// Answers the citizen triggers: starts the next queued build, build queue empty, smart task not assigned (always
+// true; see below), goal is repair; gather and build triggers go to the active goal (2 when not the main goal)
 long EEUCBasicCitizen::EvaluateCondition(EEComplexUnit* inUnit, unsigned long inEvent)
 {
     bool theTrue = false;
@@ -563,7 +563,15 @@ long EEUCBasicCitizen::EvaluateCondition(EEComplexUnit* inUnit, unsigned long in
         theTrue = inUnit->mCitizenBuildQueue.size() == 0;
         break;
     case kTriggerSmartTaskNotAssigned:
-        theTrue = inUnit->mGoalState == NULL;
+        // patched: always true. Its only use is citizen.tai's TaskSmartCitizen action ("SmartTaskNotAssigned
+        // true(Idle)"), entered when a building is finished. A next job found there (EEUGBuildRepair::FindNextWork,
+        // human players only) switches the citizen to that job's action at once, so a citizen still in
+        // TaskSmartCitizen when this is tested was given none and goes idle (Idle clears the finished build goal).
+        // The original tested mGoalState != NULL (the finished build goal still queued), which did the same in
+        // practice; fixes-all turned it into mGoalState == NULL, which is never true there, so every citizen
+        // that found no next job (and every computer player's builder) stayed in TaskSmartCitizen for good with
+        // the building animation: never idle, skipped by the idle-citizen key, never picked as a builder again.
+        theTrue = true;
         break;
     case kTriggerGoalIsRepairSite:
         if (inUnit->mActiveGoal != NULL && inUnit->mActiveGoal->mKind == kGoalBuildRepair)

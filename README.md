@@ -221,6 +221,12 @@ CI (GitHub Actions, `windows-latest`) fetches the pinned toolchain and builds ev
     icon is drawn when the game starts from the game's own formation icons (none of the art is in this source); its
     help text is in `Language.dll`. The formation lives in `src/Empire Earth/Formations/EEFormation.cpp` (`EEFPoint`),
     the button in `src/Empire Earth/User Interface Thread/EEUIFMainGame.cpp`. A saved game keeps the formation.
+  - Builders go idle again: `fixes-all` inverted the citizen AI condition "smart task not assigned"
+    (`EEUCBasicCitizen::EvaluateCondition`), which left a citizen that had finished a building and found no next
+    job by itself (help build nearby, work a farm, gather by a drop site) standing at the site with the building
+    animation for good: never idle, so the idle-citizen key skipped it, and computer players never used it as a
+    builder again. The condition is now always true where it is used, so such a citizen goes idle, as in the
+    original game.
   - Every change on top (new features included) may alter the simulation, the network traffic or the save format
     further. Play multiplayer only with players running the same `patched` build: share the built files rather than
     each player building their own. Saves load as on `fixes-all` until a change touches the save format.
