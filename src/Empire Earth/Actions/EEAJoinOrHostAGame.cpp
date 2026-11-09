@@ -74,6 +74,7 @@
 #include "ee/EEAction.h"
 #include "ee/EEAJoinOrHostAGame.h"
 #include "ee/EEStringIDs.h"
+#include "ee/EEUnitRules.h"           // patched: the unit rules
 // FUNCTION: EXE 0x402086
 // Creates the join/host action for a mode, player name and game name
 EEAJoinOrHostAGame::EEAJoinOrHostAGame(long inMode, const UWideString& inPlayerName, const UWideString& inGameName)
@@ -147,6 +148,8 @@ void EEAJoinOrHostAGame::Virtual4()
         if (gCommunications) {
             gGameOptions.mLock->WriteLock();
             gGameOptions = gGamePreferences.GetLastGameOptions();
+            // patched: and the last unit rules (a client gets the host's with its full options; ee/EEUnitRules.h)
+            gUnitRules = gLastUnitRules;
             gGameOptions.mIsMultiplayer = true;
             gGameOptions.mCheatCodes = false;
             gGameOptions.mLock->WriteUnlock();

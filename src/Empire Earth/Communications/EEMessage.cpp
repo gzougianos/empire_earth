@@ -66,6 +66,7 @@
 #include "ee/EmpireEarth.h"
 #include "ee/EEUserInterface.h"
 #include "ee/EEMessage.h"
+#include "ee/EEUnitRules.h"           // patched: the unit rules
 #include "ee/EECommunications.h"
 #include "ee/EEClient.h"
 #include "ee/EEServer.h"
@@ -2896,7 +2897,8 @@ EEMGameOptions::EEMGameOptions(long inOption, long inValue, const UWideString& i
 }
 
 // FUNCTION: EXE 0x4bec38
-// Changes one lobby game option (0..17) to the message's value or map type and updates the lobby
+// Changes one lobby game option (0..17; patched: 18, the unit rules) to the message's value or map type and updates
+// the lobby
 void EEMGameOptions::Execute()
 {
     gGameOptions.mLock->WriteLock();
@@ -2954,6 +2956,10 @@ void EEMGameOptions::Execute()
         break;
     case 17:
         gGameOptions.mVictory = this->mValue > 0;
+        break;
+    case 18:
+        // patched: a piece of the unit rules, in the map type's string (ee/EEUnitRules.h)
+        gUnitRules.ReceivePiece(this->mValue, this->mMapType);
         break;
     }
     gGameOptions.mLock->WriteUnlock();
@@ -3013,6 +3019,62 @@ void EEMGameOptions::ImportMessage(unsigned char* inPayloadPointer)
 bool EEMGameOptions::IsResponse(NEMessage* inMessage)
 {
     return false;
+}
+
+// patched: the unit rules travel as lobby option 18 messages (ee/EEUnitRules.h). The server packs queued inputs into
+// communications ticks of under 0x240 bytes (NESynchronousServer, the tick loop) and never sends an input too big
+// for an empty tick, which then also holds back every input queued after it (the lobby's start message among them),
+// so the text goes in pieces of at most kUnitRulesPieceLength characters. A piece's value is the sending's sequence
+// number << 16 | its index << 8 | the piece count; a receiver collects one sequence's pieces in order and sets the
+// rules from the last one (a sequence that another one interrupts is dropped).
+static const unsigned long kUnitRulesPieceLength = 380;
+static unsigned long sUnitRulesSendSequence = 0;
+static long sUnitRulesSequence = -1;        // the sequence being received (-1: none)
+static unsigned long sUnitRulesNextPiece = 0;
+static UWideString sUnitRulesPending;
+
+void EEUnitRules::Send(unsigned char inSlot) const
+{
+    UWideString theText;
+    this->ToString(theText);
+    const char* theData = theText;
+    unsigned long theLength = strlen(theData);
+    unsigned long theCount = theLength == 0 ? 1 : (theLength + kUnitRulesPieceLength - 1) / kUnitRulesPieceLength;
+    if (theCount > 0xff)
+        return;                             // (over 96000 characters: more than all the database's techs)
+    unsigned long theSequence = sUnitRulesSendSequence++ & 0xffff;
+    char thePiece[kUnitRulesPieceLength + 1];
+    for (unsigned long i = 0; i < theCount; i++) {
+        unsigned long theStart = i * kUnitRulesPieceLength;
+        unsigned long theSize = theLength - theStart < kUnitRulesPieceLength ? theLength - theStart : kUnitRulesPieceLength;
+        memcpy(thePiece, theData + theStart, theSize);
+        thePiece[theSize] = '\0';
+        NEMessage* theMessage = new EEMGameOptions(18, (theSequence << 16) | (i << 8) | theCount, UWideString(thePiece));
+        if (inSlot == kSlotNone)
+            gCommunications->ProcessGuaranteedLocalUserInput(theMessage, kSlotNone);
+        else
+            gCommunications->ProcessLocalUserInput(theMessage, inSlot);
+    }
+}
+
+void EEUnitRules::ReceivePiece(unsigned long inValue, const char* inText)
+{
+    long theSequence = (long)(inValue >> 16);
+    unsigned long theIndex = (inValue >> 8) & 0xff;
+    unsigned long theCount = inValue & 0xff;
+    if (theIndex == 0) {
+        sUnitRulesSequence = theSequence;
+        sUnitRulesNextPiece = 0;
+        sUnitRulesPending = "";
+    }
+    if (theSequence != sUnitRulesSequence || theIndex != sUnitRulesNextPiece)
+        return;
+    sUnitRulesPending += inText;
+    sUnitRulesNextPiece++;
+    if (sUnitRulesNextPiece >= theCount) {
+        this->FromString(sUnitRulesPending);
+        sUnitRulesSequence = -1;
+    }
 }
 
 // FUNCTION: EXE 0x4beedd

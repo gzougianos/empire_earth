@@ -72,6 +72,7 @@
 #include "ee/EEUIEPlayCampaignEvents.h"
 #include "ee/EEUIESinglePlayerEvents.h"
 #include "ee/EEStringIDs.h"
+#include "ee/EEUnitRules.h"           // patched: the unit rules
 void SPESavePlayerName(UIForm* inForm);
 
 // FUNCTION: EXE 0x5e8a24
@@ -147,6 +148,7 @@ long EEUIESPERandomMap::ProcessEvent(UIForm* inForm, UIEntity* inEntity)
     UIManager* theManager = inForm->GetManager();
     gWorld.GetLobbyOptions().mLock->WriteLock();
     gGameOptions = gGamePreferences.GetLastGameOptions();
+    gUnitRules = gLastUnitRules;            // patched: and the last unit rules (ee/EEUnitRules.h)
     theName = static_cast<UIEditBox*>(inForm->GetControl(kSinglePlayerPlayerNameEditBox))->GetText(0);
     if (theName.GetLength() == 0)
         gResource->GetString(IDS_SE_HUMAN, theName);

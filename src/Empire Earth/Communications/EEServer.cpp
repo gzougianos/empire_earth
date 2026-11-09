@@ -51,6 +51,7 @@
 #include "ee/EEServer.h"
 #include "LostDebug.h"   // synthetic, NOT original source (LOST-DEBUG: EE_LOST_CASE in ProcessSystemMessage)
 #include "ee/EEStringIDs.h"
+#include "ee/EEUnitRules.h"           // patched: the unit rules
 long gDefaultPlayerColors[16] = {0, 1, 4, 9, 2, 15, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15};
 static unsigned long sSample = 0xffffffff;   // 0x4bb8b8 (ExecuteRemovePlayer: the last booted/out-of-synch sound)
 
@@ -257,6 +258,7 @@ void EEServer::ProcessConnectionRequest(unsigned char inSlot, const EEGameOption
         this->mSendToSlots.insert(std::map<unsigned char, unsigned char>::value_type((unsigned char)theIndex, inSlot));
         this->GetCurrentCommunicationsTick();
         gCommunications->ProcessLocalUserInput(new EEMFullGameOptions(gGameOptions), inSlot);
+        gUnitRules.Send(inSlot);            // patched: and the unit rules (ee/EEUnitRules.h)
         for (i = 0; i < 16; i++) {
             if (i != theIndex) theOther = gWorld.GetLobbyOptions().mPlayers[i]; else theOther = thePlayer;
             this->GetCurrentCommunicationsTick();

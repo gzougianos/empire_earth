@@ -334,6 +334,11 @@ enum EELobbyControl {
     kLobbyGameVariantCombo = 205,        // dbuicontrols form 26 index 205 id 2706 'M-SS Game Variant Combo' (type 4); site form via ((UIComboBox*)inForm
     kLobbyDifficultyCombo = 207,         // dbuicontrols form 26 index 207 id 2708 'M-SS Difficulty Combo' (type 4); site form via ((UIComboBox*)inForm
     kLobbyGameSpeedCombo = 209,          // dbuicontrols form 26 index 209 id 2710 'M-SS Game Speed Combo' (type 4); site form via ((UIComboBox*)inForm
+    // patched: the spare 'Place Holder 1A' slot (hidden in the database, under the world unit limit) shows the Units
+    // option (ee/EEUnitRules.h): its title, the host's combo and everyone else's value
+    kLobbyPlaceHolder1ALabel0 = 210,     // dbuicontrols form 26 index 210 id 2711 'M-SS Place Holder 1A Label 0' (type 15)
+    kLobbyPlaceHolder1ACombo = 211,      // dbuicontrols form 26 index 211 id 2712 'M-SS Place Holder 1A Combo' (type 4)
+    kLobbyPlaceHolder1ALabel2 = 224,     // dbuicontrols form 26 index 224 id 2725 'M-SS Place Holder 1A Label 2' (type 15)
     kLobbyGameOpCheckBox6RecGame = 214,  // dbuicontrols form 26 index 214 id 2715 'M-SS Game Op Check Box 6 (Rec Game)' (type 2); site form via inForm
     kLobbyGameOpCheckBox1RevealMap = 215,  // dbuicontrols form 26 index 215 id 2716 'M-SS Game Op Check Box 1 (Reveal Map)' (type 2); site form via inForm
     kLobbyGameOpCheckBox2CustomCiv = 216,  // dbuicontrols form 26 index 216 id 2717 'M-SS Game Op Check Box 2 (Custom Civ?)' (type 2); site form via inForm

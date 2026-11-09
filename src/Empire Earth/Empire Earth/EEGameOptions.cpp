@@ -592,3 +592,169 @@ unsigned long EEGetNumberOfResourceLevels()
 {
     return EEStartingResources::sTable.size();
 }
+
+// patched: the random-map unit rules (ee/EEUnitRules.h). Not in the original game.
+#include <stdio.h>
+#include "ee/EEStringIDs.h"
+#include "ee/EEUnitRules.h"
+
+EEUnitRules gUnitRules;
+EEUnitRules gLastUnitRules;
+
+// whether the database's tech tree disables a tech by default (EETechTreeNode::Load sets mScenEditorObsoleted from
+// it); an unknown id is not disabled
+static bool EEUnitRulesDefault(long inID)
+{
+    EETechTreeNode* theNode = gTechTree.Get(inID);
+    return theNode != NULL && theNode->mData != NULL && theNode->mData->mObsoletedByDefault;
+}
+
+// the dialog's category of a tech (kUnitRulesCategoryCount: not listed): the scenario editor's grouping
+// (EESEPlayerScreen::BuildTechTypeLists), with every building family member counted as a building (the editor lists
+// docks among the units: their class is not a land building)
+static long EEUnitRulesCategory(long inID)
+{
+    EETechTreeNode* theNode = gTechTree.Get(inID);
+    if (theNode == NULL || theNode->mData == NULL || !theNode->mData->mShowInEditor)
+        return kUnitRulesCategoryCount;
+    long theClassIndex = theNode->mData->mUnitClass;
+    if (theClassIndex <= 0 || theClassIndex >= (long)(sizeof(gUnitClassTable) / sizeof(gUnitClassTable[0])))
+        return kUnitRulesCategoryCount;
+    EEUnitClass* theClass = gUnitClassTable[theClassIndex];
+    if (theClass == NULL)
+        return kUnitRulesCategoryCount;
+    if (theClass->mFamily == kUnitFamilyBuilding || theClass->IsLandBuilding())
+        return kUnitRulesBuildings;
+    if (theClass->mAIKind == kAIKindHero || theClass->mFamily == kUnitFamilyHero)
+        return kUnitRulesHeroes;
+    return kUnitRulesUnits;
+}
+
+void EEUnitRules::ToString(UWideString& outText) const
+{
+    char theEntry[24];
+    outText = "";
+    for (std::map<long, bool>::const_iterator it = this->mChanges.begin(); it != this->mChanges.end(); ++it) {
+        sprintf(theEntry, "%s%c%ld", outText.GetLength() > 0 ? "," : "", it->second ? '-' : '+', it->first);
+        outText += theEntry;
+    }
+}
+
+void EEUnitRules::FromString(const char* inText)
+{
+    this->mChanges.clear();
+    const char* thePosition = inText;
+    while (thePosition != NULL && *thePosition != '\0') {
+        while (*thePosition == ',' || *thePosition == ' ')
+            ++thePosition;
+        char theSign = *thePosition;
+        if (theSign != '-' && theSign != '+')
+            break;
+        char* theEnd;
+        long theID = strtol(thePosition + 1, &theEnd, 10);
+        if (theEnd == thePosition + 1)
+            break;
+        this->mChanges[theID] = theSign == '-';
+        thePosition = theEnd;
+    }
+}
+
+bool EEUnitRules::IsDisabled(long inID) const
+{
+    std::map<long, bool>::const_iterator it = this->mChanges.find(inID);
+    if (it != this->mChanges.end())
+        return it->second;
+    return EEUnitRulesDefault(inID);
+}
+
+// records one tech's state: a change from the default, or no entry when it matches the default
+void EEUnitRules::SetOne(long inID, bool inDisabled)
+{
+    if (inDisabled == EEUnitRulesDefault(inID))
+        this->mChanges.erase(inID);
+    else
+        this->mChanges[inID] = inDisabled;
+}
+
+void EEUnitRules::SetDisabled(long inID, bool inDisabled)
+{
+    EETechTreeNode* theNode = gTechTree.Get(inID);
+    if (theNode == NULL || theNode->mData == NULL || this->IsDisabled(inID) == inDisabled)
+        return;
+    // set before recursing (the original sets it after: the same on the database's acyclic prerequisites, and no
+    // endless recursion on a cycle)
+    this->SetOne(inID, inDisabled);
+    if (inID == kTechEpochPrehistoric)
+        return;
+    std::vector<long> theIDs;
+    gTechTree.GetNodeIDs(theIDs);
+    RTSTechTreeNodeData* theData = theNode->mData;
+    for (unsigned long i = 0; i < theIDs.size(); i++) {
+        long theOtherID = theIDs[i];
+        if (theOtherID == inID)
+            continue;
+        EETechTreeNode* theOther = gTechTree.Get(theOtherID);
+        if (theOther == NULL || theOther->mData == NULL)
+            continue;
+        if (inDisabled) {
+            // disabling: whatever needs this tech goes too
+            RTSTechTreeNodeData* theOtherData = theOther->mData;
+            if (theOtherData->mPrerequisite1 == inID || theOtherData->mPrerequisite2 == inID ||
+                theOtherData->mPrerequisite3 == inID || theOtherData->mPrerequisite4 == inID)
+                this->SetDisabled(theOtherID, true);
+        } else {
+            // enabling: whatever this tech needs comes back
+            if (theData->mPrerequisite1 == theOtherID || theData->mPrerequisite2 == theOtherID ||
+                theData->mPrerequisite3 == theOtherID || theData->mPrerequisite4 == theOtherID)
+                this->SetDisabled(theOtherID, false);
+        }
+    }
+}
+
+unsigned long EEUnitRules::GetNumChanged() const
+{
+    unsigned long theCount = 0;
+    for (std::map<long, bool>::const_iterator it = this->mChanges.begin(); it != this->mChanges.end(); ++it) {
+        if (EEUnitRulesCategory(it->first) != kUnitRulesCategoryCount)
+            theCount++;
+    }
+    return theCount;
+}
+
+void EEUnitRules::Apply(EETechTree& ioTree) const
+{
+    for (std::map<long, bool>::const_iterator it = this->mChanges.begin(); it != this->mChanges.end(); ++it) {
+        EETechTreeNode* theNode = ioTree.Get(it->first);
+        if (theNode != NULL)
+            theNode->SetScenEditorObsoleted(it->second, false);
+    }
+}
+
+void EEUnitRules::GetTechs(long inCategory, std::vector<long>& outIDs)
+{
+    std::vector<long> theIDs;
+    gTechTree.GetNodeIDs(theIDs);
+    outIDs.clear();
+    for (unsigned long i = 0; i < theIDs.size(); i++) {
+        if (EEUnitRulesCategory(theIDs[i]) == inCategory)
+            outIDs.push_back(theIDs[i]);
+    }
+}
+
+void EEUnitRules::GetSummary(UWideString& outText) const
+{
+    if (this->IsDefault()) {
+        EEUnitRules::GetText(IDS_UNIT_RULES_DEFAULT, "Game defaults", outText);
+    } else {
+        UWideString theFormat;
+        EEUnitRules::GetText(IDS_UNIT_RULES_CUSTOM, "Custom (%d changed)", theFormat);
+        sprintf(outText, theFormat, (int)this->GetNumChanged());
+    }
+}
+
+void EEUnitRules::GetText(long inStringID, const char* inFallback, UWideString& outText)
+{
+    outText = "";
+    if (gResource == NULL || gResource->GetString(inStringID, outText) != kErrorOK || outText.GetLength() == 0)
+        outText = inFallback;
+}

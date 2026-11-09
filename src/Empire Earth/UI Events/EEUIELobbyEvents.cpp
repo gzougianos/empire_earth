@@ -92,6 +92,8 @@
 #include "LostDebug.h"
 #include "ee/EEStringIDs.h"
 #include "ee/EETechTreeTechID.h"
+#include "ee/EEUnitRules.h"           // patched: the Units option
+#include "ee/EEUIFUnitRules.h"
 static unsigned long sStartTime;           // 0x562fd0: the lobby's Start time (provisional name)
 static long sPlayerTypeMenus[16];        // 0x562f90: the menu each slot's type box holds (provisional name)
 // .data 0x4c6474..0x4c64b0: the string ids of the lobby's difficulty, (unused) 0x4c6480, speed and game type lists
@@ -124,6 +126,12 @@ void LobbyOnPlayerTypeYes(UIForm* inForm);
 void LobbyOnPlayerTypeNo(UIForm* inForm);
 long LobbyRebuildPlayers(EEPSaveGameHeader& inHeader);
 long LobbyApplySavedGameOptions(EEPSaveGameHeader& inHeader);
+// patched: the Units option (ee/EEUnitRules.h; defined at the end of the unit)
+class EEUIELEUnitRules : public UIEvent {
+public:
+    virtual long ProcessEvent(UIForm* inForm, UIEntity* inEntity);
+};
+static void LobbyShowUnitRules(UIForm* inForm, const EEGameOptions& inOptions, bool inCanEdit);
 
 // FUNCTION: EXE 0x5d9d67
 // Returns the player type for entry inSelection of lobby player-type menu inMenu; 5 (none) when out of range
@@ -963,6 +971,10 @@ void LobbySetGameOptionEvents(UIForm* inForm)
     inForm->GetControl(kLobbyGameOpCheckBox7Victory)->SetTriggerEvent(kControlTriggerChecked, theCheckBoxEvent);
     inForm->GetControl(kLobbyGameOpCheckBox7Victory)->SetTriggerEvent(kControlTriggerUnchecked, theCheckBoxEvent);
     theCheckBoxEvent->Dereference();
+    // patched: the Units option
+    theEvent = new EEUIELEUnitRules;
+    inForm->GetControl(kLobbyPlaceHolder1ACombo)->SetTriggerEvent(kControlTriggerSelectionChanged, theEvent);
+    theEvent->Dereference();
 }
 
 // FUNCTION: EXE 0x5dbfe8
@@ -1982,6 +1994,7 @@ void LobbyShowGameOptions(const EEGameOptions& inOptions, const EEGameOptionsPla
     theForm->GetControl(kLobbyGameOpCheckBox7Victory)->SetDisplayMode(kDisplayModeHidden);
     theForm->GetControl(kLobbyGameOpCheckBox7Bitmap)->SetDisplayMode(kDisplayModeHidden);
     theForm->GetControl(kLobbyGameOpCheckBox7Label)->SetDisplayMode(kDisplayModeHidden);
+    LobbyShowUnitRules(theForm, inOptions, theServer && !theReady);   // patched: the Units option
 theEnd:
     ;
 }
@@ -2633,3 +2646,77 @@ long EEUIELEGameMapType::ProcessEvent(UIForm* inForm, UIEntity* inEntity)
 
 // FUNCTION: EXE 0x5e0e09
 // Copy-constructs one lobby slot in place
+
+// ---- patched: the Units option (ee/EEUnitRules.h; not in the original game) ----
+
+// Shows the Units option in the spare Place Holder 1A slot under the world unit limit (random-map games only): the
+// host's combo (Game defaults, the custom summary, Choose units...) or, for everyone else and a ready host, the value
+void LobbyShowUnitRules(UIForm* inForm, const EEGameOptions& inOptions, bool inCanEdit)
+{
+    UITextLabel* theTitle = static_cast<UITextLabel*>(inForm->GetControl(kLobbyPlaceHolder1ALabel0));
+    UIComboBox* theBox = static_cast<UIComboBox*>(inForm->GetControl(kLobbyPlaceHolder1ACombo));
+    UITextLabel* theValue = static_cast<UITextLabel*>(inForm->GetControl(kLobbyPlaceHolder1ALabel2));
+    if (theTitle == NULL || theBox == NULL || theValue == NULL)
+        return;
+    if (inOptions.GetLoadType() != 0) {
+        theTitle->SetDisplayMode(kDisplayModeHidden);
+        theBox->SetDisplayMode(kDisplayModeHidden);
+        theValue->SetDisplayMode(kDisplayModeHidden);
+        return;
+    }
+    UWideString theText;
+    UWideString theSummary;
+    EEUnitRules::GetText(IDS_UNIT_RULES, "Units", theText);
+    theTitle->SetText(theText);
+    theTitle->SetDisplayMode(kDisplayModeShown);
+    gUnitRules.GetSummary(theSummary);
+    theValue->SetText(theSummary);
+    // rebuild the combo's lines only when they change (an open list keeps its lines)
+    bool theIsDefault = gUnitRules.IsDefault();
+    unsigned long theCount = theIsDefault ? 2 : 3;
+    const UILBString* theList = theBox->GetListBox();
+    if (theList->GetLineCount() != theCount || (!theIsDefault && theList->GetData(1) != theSummary)) {
+        theBox->DeleteAllEntries();
+        EEUnitRules::GetText(IDS_UNIT_RULES_DEFAULT, "Game defaults", theText);
+        theBox->AppendLine(theText);
+        if (!theIsDefault)
+            theBox->AppendLine(theSummary);
+        EEUnitRules::GetText(IDS_UNIT_RULES_EDIT, "Choose units...", theText);
+        theBox->AppendLine(theText);
+    }
+    theBox->SetCurrentSelection(theIsDefault ? 0 : 1);
+    if (inCanEdit) {
+        theBox->SetDisplayMode(kDisplayModeShown);
+        theValue->SetDisplayMode(kDisplayModeHidden);
+    } else {
+        theBox->SetDisplayMode(kDisplayModeHidden);
+        theValue->SetDisplayMode(kDisplayModeShown);
+    }
+}
+
+// The host's Units combo: Game defaults resets the rules (and sends them), the last line opens the dialog. Setting
+// the selection fires this event too (LobbyShowUnitRules), so it acts only on a change
+long EEUIELEUnitRules::ProcessEvent(UIForm* inForm, UIEntity* inEntity)
+{
+    UIComboBox* theBox = static_cast<UIComboBox*>(inEntity);
+    unsigned long theSelection;
+    if (theBox->GetCurrentSelection(theSelection) != kErrorOK)
+        return kErrorOK;
+    unsigned long theCount = theBox->GetListBox()->GetLineCount();
+    if (theSelection == 0) {
+        bool theChanged = false;
+        gGameOptions.mLock->WriteLock();
+        if (!gUnitRules.IsDefault()) {
+            gUnitRules.Reset();
+            gUnitRules.Send(kSlotNone);
+            theChanged = true;
+        }
+        gGameOptions.mLock->WriteUnlock();
+        if (theChanged)
+            gUserInterface->PostLobbyUpdateGameOptions();
+    } else if (theSelection + 1 == theCount) {
+        theBox->SetCurrentSelection(gUnitRules.IsDefault() ? 0 : 1);
+        EEShowUnitRulesDialog();
+    }
+    return kErrorOK;
+}

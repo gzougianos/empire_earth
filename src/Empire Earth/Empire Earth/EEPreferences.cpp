@@ -14,6 +14,7 @@
 #include "ee/EEGamePreferences.h"
 #include "ee/EEStringIDs.h"
 #include "ee/EETechTreeTechID.h"
+#include "ee/EEUnitRules.h"           // patched: the unit rules
 #define kEERootKey ((long)HKEY_CURRENT_USER)
 #define kEERegistryKey "Software\\Mad Doc Software\\EE-AOC"
 #define kEEGameOptionsKey "Software\\Mad Doc Software\\EE-AOC\\Game Options"
@@ -879,6 +880,15 @@ long EEGamePreferences::LoadGameOptions()
         theValue = 1;
         this->mRegistry.CreateRegistryValue(kEERootKey, UWideString(kEEGameOptionsKey), UWideString("Victory Allowed"), theValue);
     }
+    // patched: the last random-map game's unit rules (ee/EEUnitRules.h; "" is the game's defaults)
+    theResult = this->mRegistry.GetRegistryValue(kEERootKey, UWideString(kEEGameOptionsKey), UWideString("Unit Rules"), theString);
+    if (theResult == 0) {
+        gLastUnitRules.FromString(theString);
+    } else {
+        gLastUnitRules.Reset();
+        theString = "";
+        this->mRegistry.CreateRegistryValue(kEERootKey, UWideString(kEEGameOptionsKey), UWideString("Unit Rules"), theString);
+    }
     return 0;
 }
 
@@ -1049,6 +1059,9 @@ long EEGamePreferences::SaveGameOptions()
     theValue = this->mSettings.mGameOptions.mCheatCodes == true;
     this->mRegistry.CreateRegistryValue(kEERootKey, UWideString(kEEGameOptionsKey), UWideString("Cheat Codes"), theValue);
     theValue = this->mSettings.mGameOptions.mVictory == true;
+    // patched: the unit rules first, so the original's last write still gives the result
+    gLastUnitRules.ToString(theString);
+    this->mRegistry.CreateRegistryValue(kEERootKey, UWideString(kEEGameOptionsKey), UWideString("Unit Rules"), theString);
     return this->mRegistry.CreateRegistryValue(kEERootKey, UWideString(kEEGameOptionsKey), UWideString("Victory Allowed"), theValue);
 }
 
@@ -1056,7 +1069,10 @@ long EEGamePreferences::SaveGameOptions()
 // Remembers the options of a new random-map game as the last game options, then saves the preferences
 void EEGamePreferences::SetLastGameOptions(const EEGameOptions& inOptions)
 {
-    if (inOptions.mLoadType == 0)
+    if (inOptions.mLoadType == 0) {
         this->mSettings.mGameOptions = inOptions;
+        // patched: and its unit rules (ee/EEUnitRules.h)
+        gLastUnitRules = gUnitRules;
+    }
     this->Save();
 }

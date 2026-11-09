@@ -195,6 +195,12 @@ CI (GitHub Actions, `windows-latest`) fetches the pinned toolchain and builds ev
     farthest distance, as far as the scenario editor's farthest view, and the view distance (the rear clipping
     distance) grows with it. The original zoom range is unchanged, and a game still starts at the original farthest
     zoom. Cinematics and the scenario editor keep their original limits.
+  - Unit rules for random maps: the setup screen (single player and multiplayer) has a Units option under the world
+    unit limit. "Choose units..." opens a list of every unit, building and hero, where the host moves entries between
+    Available and Disabled; disabling something also disables what depends on it in the tech tree, as in the
+    scenario editor. The rules apply to every player, computer players included, are sent to the other players in
+    the lobby, are kept in saved games, and are remembered for the next game ("Game defaults" resets them). The new
+    texts are in `Language.dll`, so copy it together with `EE-AOC.exe`.
   - Every change on top (new features included) may alter the simulation, the network traffic or the save format
     further. Play multiplayer only with players running the same `patched` build: share the built files rather than
     each player building their own. Saves load as on `fixes-all` until a change touches the save format.

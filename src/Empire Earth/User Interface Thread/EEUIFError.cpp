@@ -636,3 +636,405 @@ void EEUIFError::LayoutMessage()
 // SYNTHETIC: EXE 0x660d59
 // SYNTHETIC: EXE 0x660d78
 // SYNTHETIC: EXE 0x660d84
+
+// ---- patched: the setup screen's unit rules dialog (ee/EEUIFUnitRules.h; not in the original game) ----
+#include <algorithm>
+#include <vector>
+#include "lle/UIListBox.h"
+#include "lle/UILBString.h"
+#include "lle/UILayoutUtility.h"
+#include "ee/EEGameOptions.h"
+#include "ee/EEUnitRules.h"
+#include "ee/EEUIFUnitRules.h"
+
+// what the dialog's buttons and lists do (the event's action)
+enum EEURAction {
+    kURActionUnits = kUnitRulesUnits,
+    kURActionBuildings = kUnitRulesBuildings,
+    kURActionHeroes = kUnitRulesHeroes,
+    kURActionDisable = 10,                  // the available list's selection goes to the disabled list
+    kURActionEnable,                        // and back
+    kURActionDefaults,
+    kURActionOk,
+    kURActionCancel
+};
+
+// the dialog's controls, by form index (also their ids)
+enum EEURControl {
+    kURTitle = 0,
+    kURHint,
+    kURAvailableLabel,
+    kURDisabledLabel,
+    kURCategoryFirst,                       // the three category buttons
+    kURAvailableList = kURCategoryFirst + kUnitRulesCategoryCount,
+    kURDisabledList,
+    kURDisableButton,
+    kUREnableButton,
+    kURDefaultsButton,
+    kUROkButton,
+    kURCancelButton,
+    kURControlCount
+};
+
+class EEUIFUnitRules;
+
+// runs one of the dialog's actions (a button's button-up, a list's double-click)
+class EEUIFUREvent : public UIEvent {
+public:
+    EEUIFUREvent(long inAction) : mAction(inAction) {}
+    virtual long ProcessEvent(UIForm* inForm, UIEntity* inEntity);
+private:
+    long mAction;
+};
+
+// a text button over a light translucent panel, like the message box's (EEUIFEBOK), stronger when highlighted
+class EEUIFURButton : public UIButton {
+public:
+    EEUIFURButton(UIForm* inForm, unsigned long inIndex, const GERectangle& inRectangle, const UWideString& inText,
+                  GEFont* inFont, long inAction)
+        : UIButton(inIndex, NULL, NULL, NULL, inRectangle, inForm, inIndex, 1), mHighlighted(false)
+    {
+        this->SetFocusedTextColor(kMessageFocusedColor);
+        this->SetText(inText, inFont);
+        GEText* theGEText = this->GetGEText();
+        theGEText->SetFgColor(kMessageTextColor);
+        theGEText->SetIsTransparent(true);
+        UIEvent* theEvent = new EEUIFUREvent(inAction);
+        this->SetTriggerEvent(kControlTriggerButtonUp, theEvent);
+        theEvent->Dereference();
+    }
+    virtual ~EEUIFURButton() {}
+    virtual long DrawPolygons()
+    {
+        GERhombus theRhombus;
+        theRhombus.SetColor(this->mHighlighted ? kMessageSelectedColor : kMessageButtonColor);
+        theRhombus.SetRectangle(this->mCopiedDrawRectangle);
+        theRhombus.SetOpacity(this->mHighlighted ? 0.6f : kMessageButtonOpacity);
+        this->GetRasterizer()->Draw(&theRhombus, this->GetScreenIndex());
+        return UIButton::DrawPolygons();
+    }
+    void SetHighlighted(bool inHighlighted)
+    {
+        if (this->mHighlighted != inHighlighted) {
+            this->mHighlighted = inHighlighted;
+            this->SetDirty(true);
+        }
+    }
+private:
+    bool mHighlighted;
+};
+
+// one line of a list: the tech's epoch (1-based) and unit name, sorted by epoch, then name
+struct EEURLine {
+    long mEpoch;
+    UWideString mName;
+    long mID;
+};
+struct EEURLineLess {
+    bool operator()(const EEURLine& inLeft, const EEURLine& inRight) const
+    {
+        if (inLeft.mEpoch != inRight.mEpoch)
+            return inLeft.mEpoch < inRight.mEpoch;
+        return _mbsicmp(reinterpret_cast<const unsigned char*>((const char*)inLeft.mName),
+                        reinterpret_cast<const unsigned char*>((const char*)inRight.mName)) < 0;
+    }
+};
+
+class EEUIFUnitRules : public UIForm {
+public:
+    EEUIFUnitRules(UIManager* inManager);
+    virtual ~EEUIFUnitRules();
+    void OnAction(long inAction);
+protected:
+    virtual void Open();
+    virtual void Close();
+private:
+    GERectangle GetRectangle(float inLeft, float inTop, float inRight, float inBottom) const;
+    UITextLabel* CreateLabel(unsigned long inIndex, const UWideString& inText, float inLeft, float inTop,
+                             float inRight, float inBottom, unsigned long inAlignment, unsigned long inLabelType);
+    UILBString* CreateList(unsigned long inIndex, float inLeft, float inRight, long inDoubleClickAction);
+    void Refill();
+    void Move(bool inToDisabled);
+
+    EEUnitRules mRules;                     // the working copy (OK stores it)
+    long mCategory;
+    GERectangle mScreen;
+    GEFont* mFont;
+    UITextLabel* mLabels[4];                // title, hint, the two list headers
+    EEUIFURButton* mCategoryButtons[kUnitRulesCategoryCount];
+    EEUIFURButton* mButtons[5];             // disable, enable, defaults, OK, cancel
+    UILBString* mAvailable;
+    UILBString* mDisabled;
+    std::vector<long> mAvailableIDs;        // the lists' tech ids, line by line
+    std::vector<long> mDisabledIDs;
+    EEUIBGenericBackground* mBackground;
+};
+
+long EEUIFUREvent::ProcessEvent(UIForm* inForm, UIEntity* inEntity)
+{
+    static_cast<EEUIFUnitRules*>(inForm)->OnAction(this->mAction);
+    return kErrorOK;
+}
+
+// a rectangle in the 1024x768 design, scaled to the window
+GERectangle EEUIFUnitRules::GetRectangle(float inLeft, float inTop, float inRight, float inBottom) const
+{
+    UILayoutUtility theLayout;
+    GERectangle theRectangle;
+    theLayout.SetLeft(4, inLeft / 1024.0f);
+    theLayout.SetRight(4, inRight / 1024.0f);
+    theLayout.SetTop(4, inTop / 768.0f);
+    theLayout.SetBottom(4, inBottom / 768.0f);
+    theLayout.CalculateRectangle(this->mScreen, theRectangle, true);
+    return theRectangle;
+}
+
+UITextLabel* EEUIFUnitRules::CreateLabel(unsigned long inIndex, const UWideString& inText, float inLeft, float inTop,
+                                         float inRight, float inBottom, unsigned long inAlignment,
+                                         unsigned long inLabelType)
+{
+    UITextLabel* theLabel = new UITextLabel(inText, this->mFont, inIndex, this->GetRectangle(inLeft, inTop, inRight, inBottom),
+                                            this, inLabelType, inIndex, 0);
+    theLabel->SetAlignment(inAlignment);
+    GEText* theGEText = theLabel->GetGEText();
+    theGEText->SetIsTransparent(true);
+    theGEText->SetFgColor(kMessageTextColor);
+    this->AddControl(theLabel, 0);
+    return theLabel;
+}
+
+UILBString* EEUIFUnitRules::CreateList(unsigned long inIndex, float inLeft, float inRight, long inDoubleClickAction)
+{
+    std::vector<UWideString> theLines;
+    UILBString* theList = new UILBString(inIndex, theLines, this->mFont, false, this->GetRectangle(inLeft, 206.0f, inRight, 566.0f),
+                                         this, inIndex, 1);
+    GEText* theGEText = theList->GetGEText();
+    theGEText->SetIsTransparent(true);
+    theGEText->SetFgColor(kMessageTextColor);
+    theList->SetBgColor(kMessageEditBoxColor);
+    theList->SetBgOpacity(0.5f);
+    theList->SetScrollBarBgOpacity(kMessageScrollBarOpacity);
+    theList->GetSelectedBackground()->SetColor(kMessageSelectedColor);
+    UIEvent* theEvent = new EEUIFUREvent(inDoubleClickAction);
+    theList->SetTriggerEvent(kControlTriggerDoubleClicked, theEvent);
+    theEvent->Dereference();
+    this->AddControl(theList, 0);
+    return theList;
+}
+
+// Creates the dialog on the current unit rules, laid out for a 1024x768 design like the message box
+EEUIFUnitRules::EEUIFUnitRules(UIManager* inManager)
+    : UIForm(kURControlCount, 1, inManager, -1, true), mCategory(kUnitRulesUnits)
+{
+    UWideString theText;
+    unsigned long i;
+    this->mScreen = GERectangle(0.0f, 0.0f, (float)gGameWindow->GetWidth(), (float)gGameWindow->GetHeight());
+    gGameOptions.mLock->ReadLock();
+    this->mRules = gUnitRules;
+    gGameOptions.mLock->ReadUnlock();
+    this->mFont = UIFontTable::CreateClosestFont(0x1c, UMFloatToLong((gFontTahoma12->GetHeight() * (1.0f / 768.0f)) *
+                                                                     this->mScreen.GetHeight()));
+    EEUnitRules::GetText(IDS_UNIT_RULES_TITLE, "Units and buildings every player can make", theText);
+    this->mLabels[0] = this->CreateLabel(kURTitle, theText, 172.0f, 110.0f, 852.0f, 136.0f, kTextAlignCenter, 0);
+    EEUnitRules::GetText(IDS_UNIT_RULES_HINT, "Double-click a line to move it.", theText);
+    this->mLabels[1] = this->CreateLabel(kURHint, theText, 172.0f, 572.0f, 852.0f, 618.0f, kTextAlignCenter, 1);
+    EEUnitRules::GetText(IDS_UNIT_RULES_AVAILABLE, "Available", theText);
+    this->mLabels[2] = this->CreateLabel(kURAvailableLabel, theText, 172.0f, 182.0f, 482.0f, 202.0f, kTextAlignCenter, 0);
+    EEUnitRules::GetText(IDS_UNIT_RULES_DISABLED, "Disabled", theText);
+    this->mLabels[3] = this->CreateLabel(kURDisabledLabel, theText, 542.0f, 182.0f, 852.0f, 202.0f, kTextAlignCenter, 0);
+    for (i = 0; i < kUnitRulesCategoryCount; i++) {
+        // the scenario editor's names: Units, Buildings, Heroes
+        gResource->GetString(IDS_SE_UNIT_GROUP_FIRST + i, theText);
+        float theLeft = 172.0f + 130.0f * i;
+        this->mCategoryButtons[i] = new EEUIFURButton(this, kURCategoryFirst + i,
+                                                      this->GetRectangle(theLeft, 146.0f, theLeft + 120.0f, 170.0f),
+                                                      theText, this->mFont, kURActionUnits + i);
+        this->AddControl(this->mCategoryButtons[i], 0);
+    }
+    this->mAvailable = this->CreateList(kURAvailableList, 172.0f, 482.0f, kURActionDisable);
+    this->mDisabled = this->CreateList(kURDisabledList, 542.0f, 852.0f, kURActionEnable);
+    this->mButtons[0] = new EEUIFURButton(this, kURDisableButton, this->GetRectangle(492.0f, 330.0f, 532.0f, 356.0f),
+                                          UWideString(">>"), this->mFont, kURActionDisable);
+    this->mButtons[1] = new EEUIFURButton(this, kUREnableButton, this->GetRectangle(492.0f, 366.0f, 532.0f, 392.0f),
+                                          UWideString("<<"), this->mFont, kURActionEnable);
+    EEUnitRules::GetText(IDS_UNIT_RULES_DEFAULT, "Game defaults", theText);
+    this->mButtons[2] = new EEUIFURButton(this, kURDefaultsButton, this->GetRectangle(172.0f, 626.0f, 332.0f, 652.0f),
+                                          theText, this->mFont, kURActionDefaults);
+    gResource->GetString(IDS_LOBBY_OK, theText);
+    this->mButtons[3] = new EEUIFURButton(this, kUROkButton, this->GetRectangle(612.0f, 626.0f, 722.0f, 652.0f),
+                                          theText, this->mFont, kURActionOk);
+    gResource->GetString(IDS_LOBBY_CANCEL, theText);
+    this->mButtons[4] = new EEUIFURButton(this, kURCancelButton, this->GetRectangle(742.0f, 626.0f, 852.0f, 652.0f),
+                                          theText, this->mFont, kURActionCancel);
+    for (i = 0; i < 5; i++)
+        this->AddControl(this->mButtons[i], 0);
+    this->GetEntityGroup(0)->Enable();
+    UILayoutUtility theLayout;
+    theLayout.SetLeft(4, 152.0f / 1024.0f);
+    theLayout.SetRight(4, 872.0f / 1024.0f);
+    theLayout.SetTop(4, 94.0f / 768.0f);
+    theLayout.SetBottom(4, 674.0f / 768.0f);
+    this->SetLayout(theLayout);
+    GETextureDescription theDescription;
+    theDescription.mIs3DRenderable = false;
+    theDescription.mIsTransparencyEnabled = false;
+    theDescription.mNumMipLevelsToDrop = 0;
+    theDescription.mSurfaceVolatility = 1;
+    theDescription.mFrameFormat = 0;
+    theDescription.mCreateMIPMaps = true;
+    theDescription.mPixelDepth = this->GetManager()->GetUITextureBitDepth();
+    theDescription.mHasAlpha = true;
+    this->mBackground = new EEUIBGenericBackground(0, "textures\\EEGenericBack_Gold", theDescription, theLayout, this, 0,
+                                                   kMessageBackgroundColor, true, 1.0f, 1.0f, 1.0f, 3);
+    this->Refill();
+}
+
+// Destroys the dialog's controls and its font (the form owns the background, as for the message box)
+EEUIFUnitRules::~EEUIFUnitRules()
+{
+    unsigned long i;
+    for (i = 0; i < 4; i++)
+        delete this->mLabels[i];
+    for (i = 0; i < kUnitRulesCategoryCount; i++)
+        delete this->mCategoryButtons[i];
+    for (i = 0; i < 5; i++)
+        delete this->mButtons[i];
+    delete this->mAvailable;
+    delete this->mDisabled;
+    this->mFont->Dereference();
+}
+
+// Opens the dialog, scaling the background to the window as the message box does
+void EEUIFUnitRules::Open()
+{
+    UIForm::Open();
+    this->mBackground->SetScale((float)gGameWindow->GetWidth() * (1.0f / 1024.0f),
+                                (float)gGameWindow->GetHeight() * (1.0f / 768.0f));
+}
+
+// Closes the dialog: the UI thread deletes it once it is off the form stack (EEUserInterface's message 0x417, as for
+// the message box), and the lobby redraws its Units option
+void EEUIFUnitRules::Close()
+{
+    EEUIFErrorCallbackData* theData = new EEUIFErrorCallbackData;
+    theData->mCallback = NULL;
+    theData->mData = NULL;
+    gUserInterface->PostErrorClosed(this, theData);
+    UIForm::Close();
+    gUserInterface->PostLobbyUpdateGameOptions();
+}
+
+// Refills both lists with the current category's techs, by the working copy
+void EEUIFUnitRules::Refill()
+{
+    std::vector<long> theIDs;
+    std::vector<EEURLine> theLines;
+    EEURLine theLine;
+    UWideString theText;
+    unsigned long i;
+    EEUnitRules::GetTechs(this->mCategory, theIDs);
+    for (i = 0; i < theIDs.size(); i++) {
+        EETechTreeNode* theNode = gTechTree.Get(theIDs[i]);
+        if (theNode == NULL || theNode->mData == NULL)
+            continue;
+        theLine.mID = theIDs[i];
+        theLine.mEpoch = theNode->mEpoch + 1;
+        theLine.mName = "";
+        long theClass = theNode->mData->mUnitClass;
+        if (theClass > 0 && theClass < (long)(sizeof(gUnitClassTable) / sizeof(gUnitClassTable[0])) &&
+            gUnitClassTable[theClass] != NULL)
+            gResource->GetString(gUnitClassTable[theClass]->mNameStringID, theLine.mName);
+        if (theLine.mName.GetLength() == 0)
+            gResource->GetString(theNode->mData->mNameID, theLine.mName);
+        theLines.push_back(theLine);
+    }
+    std::sort(theLines.begin(), theLines.end(), EEURLineLess());
+    this->mAvailable->DeleteAllEntries();
+    this->mDisabled->DeleteAllEntries();
+    this->mAvailableIDs.clear();
+    this->mDisabledIDs.clear();
+    for (i = 0; i < theLines.size(); i++) {
+        sprintf(theText, "%d: %s", (int)theLines[i].mEpoch, (const char*)theLines[i].mName);
+        if (this->mRules.IsDisabled(theLines[i].mID)) {
+            this->mDisabled->AppendLine(theText);
+            this->mDisabledIDs.push_back(theLines[i].mID);
+        } else {
+            this->mAvailable->AppendLine(theText);
+            this->mAvailableIDs.push_back(theLines[i].mID);
+        }
+    }
+    for (i = 0; i < kUnitRulesCategoryCount; i++)
+        this->mCategoryButtons[i]->SetHighlighted((long)i == this->mCategory);
+}
+
+// Moves a list's selected tech to the other list (with what depends on it or what it needs), keeping a nearby line
+// selected in the list it left and selecting it in the list it went to
+void EEUIFUnitRules::Move(bool inToDisabled)
+{
+    UILBString* theFrom = inToDisabled ? this->mAvailable : this->mDisabled;
+    UILBString* theTo = inToDisabled ? this->mDisabled : this->mAvailable;
+    unsigned long theSelection;
+    if (theFrom->GetCurrentSelection(theSelection) != kErrorOK)
+        return;
+    const std::vector<long>& theFromIDs = inToDisabled ? this->mAvailableIDs : this->mDisabledIDs;
+    if (theSelection >= theFromIDs.size())
+        return;
+    long theID = theFromIDs[theSelection];
+    this->mRules.SetDisabled(theID, inToDisabled);
+    this->Refill();
+    unsigned long theCount = theFrom->GetLineCount();
+    if (theCount > 0)
+        theFrom->ChangeSelectionIndex(theSelection < theCount ? theSelection : theCount - 1, false, true);
+    const std::vector<long>& theToIDs = inToDisabled ? this->mDisabledIDs : this->mAvailableIDs;
+    for (unsigned long j = 0; j < theToIDs.size(); j++) {
+        if (theToIDs[j] == theID) {
+            theTo->ChangeSelectionIndex(j, false, true);
+            break;
+        }
+    }
+}
+
+void EEUIFUnitRules::OnAction(long inAction)
+{
+    switch (inAction) {
+    case kURActionUnits:
+    case kURActionBuildings:
+    case kURActionHeroes:
+        this->mCategory = inAction;
+        this->Refill();
+        break;
+    case kURActionDisable:
+        this->Move(true);
+        break;
+    case kURActionEnable:
+        this->Move(false);
+        break;
+    case kURActionDefaults:
+        this->mRules.Reset();
+        this->Refill();
+        break;
+    case kURActionOk: {
+        // store the working copy, and send it to the other players when it changed
+        UWideString theOld;
+        UWideString theNew;
+        gGameOptions.mLock->WriteLock();
+        gUnitRules.ToString(theOld);
+        this->mRules.ToString(theNew);
+        if (theOld != theNew) {
+            gUnitRules = this->mRules;
+            gUnitRules.Send(kSlotNone);
+        }
+        gGameOptions.mLock->WriteUnlock();
+        gUserInterface->CloseForm(NULL);
+        break;
+    }
+    case kURActionCancel:
+        gUserInterface->CloseForm(NULL);
+        break;
+    }
+}
+
+void EEShowUnitRulesDialog()
+{
+    gUserInterface->SwitchToForm(new EEUIFUnitRules(gUIManager));
+}

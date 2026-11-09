@@ -3712,6 +3712,15 @@
 #define IDS_RECOVER_GOLD                                                33003  // gold
 #define IDS_RECOVER_FOOD                                                33004  // food
 #define IDS_USING_INSURANCE                                             33005  // using insurance.
+// patched: the setup screen's Units option and its dialog (not in the original game; ee/EEUnitRules.h)
+#define IDS_UNIT_RULES                                                  33104  // Units
+#define IDS_UNIT_RULES_DEFAULT                                          33105  // Game defaults
+#define IDS_UNIT_RULES_CUSTOM                                           33106  // Custom (%d changed)
+#define IDS_UNIT_RULES_EDIT                                             33107  // Choose units...
+#define IDS_UNIT_RULES_TITLE                                            33108  // Units and buildings every player can make
+#define IDS_UNIT_RULES_AVAILABLE                                        33109  // Available
+#define IDS_UNIT_RULES_DISABLED                                         33110  // Disabled
+#define IDS_UNIT_RULES_HINT                                             33111  // Double-click a line to move it. ...
 
 // ranges indexed by the code: _FIRST + i (_FIRST is the block's first string), _BASE + i (_BASE itself
 // is not a string: the code's index starts above 0), _COUNT strings in the block

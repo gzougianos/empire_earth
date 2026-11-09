@@ -120,6 +120,7 @@
 #include "ee/EEAEManager.h"
 #include "ee/EEE2DLightGlow.h"
 #include "ee/EEStringIDs.h"
+#include "ee/EEUnitRules.h"           // patched: the unit rules
 
 // Unit-local declarations of functions and globals no header declares yet (provisional names)
 extern bool gLocalPlayerOut;                // 0x4e6099 (ee/EEMessage.h)
@@ -1161,6 +1162,11 @@ void EEWorld::CreatePlayers(EEGameState* inState)
         else
             thePlayer->AddPendingUnits(false, true);
         thePlayer->ApplyMapRestrictions();
+        // patched: a new random-map game's unit rules (the setup screen's Units option; ee/EEUnitRules.h), set
+        // like a scenario's editor-disabled techs before the tree is applied; a loaded game has them in its trees
+        if (!inState->mIsLoadedGame && !inState->mInScenarioEditor && inState->mGameOptions.mLoadType == 0 &&
+            !inState->mGameOptions.mIsScenarioGame)
+            gUnitRules.Apply(*theTechTree);
         if (inState->mIsLoadedGame && thePlayer->GetPlayerID() < inState->mMap->mU19561C)
             inState->mMap->FogSeen(thePlayer);
         theTechTree->ApplySavedState(gLoadingSavedGame, true);

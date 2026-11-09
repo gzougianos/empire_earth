@@ -4897,6 +4897,19 @@ BEGIN
     33005, L"using insurance."
 END
 
+// patched: the setup screen's Units option and its dialog (not in the original game)
+STRINGTABLE
+BEGIN
+    33104, L"Units"
+    33105, L"Game defaults"
+    33106, L"Custom (%d changed)"
+    33107, L"Choose units..."
+    33108, L"Units and buildings every player can make"
+    33109, L"Available"
+    33110, L"Disabled"
+    33111, L"Double-click a line to move it. Disabling something also disables what needs it; enabling it also enables what it needs."
+END
+
 STRINGTABLE
 BEGIN
     5536, L"Lt. Stock"
