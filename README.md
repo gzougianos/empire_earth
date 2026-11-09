@@ -201,6 +201,11 @@ CI (GitHub Actions, `windows-latest`) fetches the pinned toolchain and builds ev
     scenario editor. The rules apply to every player, computer players included, are sent to the other players in
     the lobby, are kept in saved games, and are remembered for the next game ("Game defaults" resets them). The new
     texts are in `Language.dll`, so copy it together with `EE-AOC.exe`.
+  - Larger selections: a drag box (or a double click on a unit, which selects its type in view) selects every one
+    of the player's units it covers, up to 1,536 (the most units the game can pick on screen) instead of the original
+    63; shift and control add and toggle in the same way. The selected-units panel still shows the first 35 icons,
+    as before. The selection message on the network changes with it (`kMaxBoxSelection` in
+    `src/Empire Earth/Communications/EEMessage.cpp` sets the limit).
   - Every change on top (new features included) may alter the simulation, the network traffic or the save format
     further. Play multiplayer only with players running the same `patched` build: share the built files rather than
     each player building their own. Saves load as on `fixes-all` until a change touches the save format.

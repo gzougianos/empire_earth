@@ -202,6 +202,9 @@ public:
 
 // vtable 0x438cf0; sizeof 0x138; ctor 0xc5d7f (EEMessage.cpp), import ctor 0xba41b; ??_G 0x2a02 (first game unit)
 // The selection travels compressed: mBuffer holds mBufferSize bytes (file-static helpers 0xc5e67 / 0xc5fd1).
+// patched: the original kept at most 63 ids in a 0x100-byte array with a one-byte size; the buffer now grows with the
+// selection (up to kMaxBoxSelection ids, EEMessage.cpp) and its size travels as two bytes, so the layout and the
+// message on the wire differ from the original's.
 class EEMSelectUnits : public EEMessage {
 public:
     EEMSelectUnits(const GERectangle& inRectangle, long inUnitType, unsigned char inType);
@@ -219,8 +222,8 @@ public:
     std::vector<long> mUnitIDs;             // +0x10
     GERectangle mRectangle;                 // +0x20
     long mL30;                              // +0x30
-    unsigned char mBuffer[0x100];           // +0x34
-    unsigned char mBufferSize;              // +0x134
+    std::vector<unsigned char> mBuffer;     // (original: unsigned char[0x100] at +0x34)
+    unsigned short mBufferSize;             // mBuffer.size() (original: unsigned char at +0x134)
 };
 
 // vtable 0x438cbc; sizeof 0x138

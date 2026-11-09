@@ -108,8 +108,13 @@
 #include "ee/EEUIFMGMainGroup.h"
 #include "ee/EEUIManager.h"
 static const float kDisbandRefund = 0.75f;   // EEMDisband (its own .rdata word: a named constant)
-static unsigned char CompressUnits(std::vector<unsigned long>& inUnits, unsigned long inOwner, unsigned char* outBuffer);
-static void DecompressUnits(unsigned char* inBuffer, unsigned char inSize, std::vector<long>& outUnits);
+// patched: the most units one selection box (or double click) selects; the original's limit was 63. This is the unit
+// picker's capacity (gUnitPicker, EERenderObject.cpp), so in practice a box takes every unit of the player it covers.
+// At 4 bytes per id at worst, the compressed buffer stays below 64 KB (its size travels as an unsigned short).
+static const unsigned long kMaxBoxSelection = 0x600;
+static unsigned short CompressUnits(std::vector<unsigned long>& inUnits, unsigned long inOwner,
+                                    std::vector<unsigned char>& outBuffer);
+static void DecompressUnits(const std::vector<unsigned char>& inBuffer, std::vector<long>& outUnits);
 #include "LostDebug.h"                      // NOT original source: the EE_LOST_DEBUG stand-in (0x4b8f8e)
 // FUNCTION: EXE 0x4b8cda
 // Registers the game's message factory for every game message type (0x41..0xfd) with the network engine
@@ -7167,67 +7172,80 @@ EEMSelectUnits::EEMSelectUnits(const GERectangle& inRectangle, long inUnitType, 
     gUnitPicker.PickUnits(this->mRectangle, gWorld.GetCurrentPlayer(), inUnitType, theUnits);
     long thePlayerID = gWorld.GetCurrentPlayer()->mPlayerID;
     this->mBufferSize = CompressUnits(theUnits, thePlayerID, this->mBuffer);
-    DecompressUnits(this->mBuffer, this->mBufferSize, this->mUnitIDs);
+    DecompressUnits(this->mBuffer, this->mUnitIDs);
 }
 
-// The selection on the wire: byte 0 is the owner (the ids' top byte), then runs of a count byte (low 6 bits; the top 2 bits: 0, 1 or 2 bytes of the ids' middle 16 bits follow) and the ids' low bytes; at most 63 ids.
+// The selection on the wire: byte 0 is the owner (the ids' top byte), then runs of a count byte (low 6 bits; the top 2 bits: 0, 1 or 2 bytes of the ids' middle 16 bits follow) and the ids' low bytes; at most 63 ids in a run.
+// The original wrote one run per group and stopped at 63 ids in all. patched: a group of more than 63 ids is written
+// as several runs (the decoder already reads any number of runs), up to kMaxBoxSelection ids in all.
 // FUNCTION: EXE 0x4c5e67
-// Packs unit ids into the compact selection format above (at most 63 ids); returns the byte count
-static unsigned char CompressUnits(std::vector<unsigned long>& inUnits, unsigned long inOwner, unsigned char* outBuffer)
+// Packs unit ids into the compact selection format above (at most kMaxBoxSelection ids); returns the byte count
+static unsigned short CompressUnits(std::vector<unsigned long>& inUnits, unsigned long inOwner,
+                                    std::vector<unsigned char>& outBuffer)
 {
     std::map<unsigned long, std::vector<unsigned long> > theGroups;
     unsigned long theGroup, theLow;
     std::map<unsigned long, std::vector<unsigned long> >::iterator it;
-    unsigned long theRemaining = 63;
+    unsigned long theRemaining = kMaxBoxSelection;
     unsigned long i;
-    *outBuffer = (unsigned char)inOwner;
-    unsigned char* theStart = outBuffer + 1;
-    unsigned char* theCursor = theStart;
-    unsigned long theSize = 1;
+    outBuffer.clear();
+    outBuffer.push_back((unsigned char)inOwner);
     for (i = 0; i < inUnits.size(); i++) {
         theGroup = (inUnits[i] >> 8) & 0xffff;
         theLow = inUnits[i] & 0xff;
         theGroups[theGroup].push_back(theLow);
     }
-    for (it = theGroups.begin(); it != theGroups.end(); it++) {
-        if (theRemaining == 0)
-            break;
-        unsigned long theCount = it->second.size();
-        if (theCount != 0) {
+    for (it = theGroups.begin(); it != theGroups.end() && theRemaining != 0; it++) {
+        theGroup = it->first;
+        std::vector<unsigned long>& theLows = it->second;
+        unsigned long theNext = 0;
+        while (theNext < theLows.size() && theRemaining != 0) {
+            unsigned long theCount = theLows.size() - theNext;
+            if (theCount > 63)
+                theCount = 63;
             if (theCount > theRemaining)
                 theCount = theRemaining;
-            theGroup = it->first;
             if (theGroup == 0) {
-                *theCursor++ = (unsigned char)theCount; theSize++;
+                outBuffer.push_back((unsigned char)theCount);
             } else if (theGroup <= 0xff) {
-                *theCursor++ = (unsigned char)(theCount + 0x40);
-                *theCursor++ = (unsigned char)theGroup; theSize += 2;
+                outBuffer.push_back((unsigned char)(theCount + 0x40));
+                outBuffer.push_back((unsigned char)theGroup);
             } else {
-                *theCursor++ = (unsigned char)(theCount + 0x80);
-                *theCursor++ = (unsigned char)(theGroup >> 8);
-                *theCursor++ = (unsigned char)theGroup; theSize += 3;
+                outBuffer.push_back((unsigned char)(theCount + 0x80));
+                outBuffer.push_back((unsigned char)(theGroup >> 8));
+                outBuffer.push_back((unsigned char)theGroup);
             }
-            for (unsigned long j = 0; j < theCount; j++) {
-                *theCursor++ = (unsigned char)it->second[j]; theSize++; theRemaining--;
-            }
+            for (unsigned long j = 0; j < theCount; j++)
+                outBuffer.push_back((unsigned char)theLows[theNext + j]);
+            theNext += theCount;
+            theRemaining -= theCount;
         }
     }
-    if (theCursor == theStart) { *theCursor = 0xff; theSize++; }
-    return (unsigned char)theSize;
+    if (outBuffer.size() == 1)
+        outBuffer.push_back(0xff);
+    return (unsigned short)outBuffer.size();
 }
 
 // FUNCTION: EXE 0x4c5fd1
-// Decodes a compact selection buffer into unit ids, replacing the list
-static void DecompressUnits(unsigned char* inBuffer, unsigned char inSize, std::vector<long>& outUnits)
+// Decodes a compact selection buffer into unit ids, replacing the list (patched: takes the buffer's own size; an empty
+// or truncated buffer decodes to what it holds instead of being read past its end)
+static void DecompressUnits(const std::vector<unsigned char>& inBuffer, std::vector<long>& outUnits)
 {
     unsigned long theBase = 0;
     unsigned long i = 1;
+    unsigned long theSize = inBuffer.size();
     outUnits.clear();
+    if (theSize < 2)
+        return;
     unsigned long theOwner = inBuffer[0] << 24;
-    do {
+    while (i < theSize) {
         unsigned long theCount = inBuffer[i] & 0x3f;
+        unsigned long theKind = inBuffer[i] >> 6;
         unsigned long theGroup;
-        switch (inBuffer[i] >> 6) {
+        // kinds 0..2 carry that many group bytes after the count byte
+        if (theKind != 3 && i + theKind >= theSize)
+            break;
+        switch (theKind) {
         case 0: theBase = theOwner; break;
         case 1:
             theBase = (inBuffer[++i] << 8) | theOwner;
@@ -7240,12 +7258,12 @@ static void DecompressUnits(unsigned char* inBuffer, unsigned char inSize, std::
         case 3: theCount = 0; break;
         }
         i++;
-        for (unsigned long j = 0; j < theCount; j++) {
+        for (unsigned long j = 0; j < theCount && i < theSize; j++) {
             long theUnit = inBuffer[i] | theBase;
             outUnits.push_back(theUnit);
             i++;
         }
-    } while (i != inSize);
+    }
 }
 
 // FUNCTION: EXE 0x4c606b
@@ -7268,7 +7286,8 @@ void EEMSelectUnits::ExportMessage(unsigned char** outPayloadPointer, unsigned l
         theLocation += sizeof(this->mFastSelectionID);
         memcpy(*outPayloadPointer + theLocation, &this->mBufferSize, sizeof(this->mBufferSize));
         theLocation += sizeof(this->mBufferSize);
-        memcpy(*outPayloadPointer + theLocation, this->mBuffer, this->mBufferSize);
+        if (this->mBufferSize != 0)
+            memcpy(*outPayloadPointer + theLocation, &this->mBuffer[0], this->mBufferSize);
         theLocation += this->mBufferSize;
         ESVERIFY_AT(theLocation == theMessageSize, 14485);
         outMessageSize = theMessageSize;
@@ -7276,10 +7295,11 @@ void EEMSelectUnits::ExportMessage(unsigned char** outPayloadPointer, unsigned l
 }
 
 // FUNCTION: EXE 0x4c6132
-// Returns the box selection's payload size: the compressed buffer plus 6 bytes
+// Returns the box selection's payload size: the header and selection id (5 bytes), the buffer size field (patched: 2
+// bytes, was 1) and the compressed buffer
 unsigned long EEMSelectUnits::ExportSize()
 {
-    return this->mBufferSize + 6;
+    return this->mBufferSize + 5 + sizeof(this->mBufferSize);
 }
 
 // FUNCTION: EXE 0x4c613d
@@ -7300,9 +7320,11 @@ void EEMSelectUnits::ImportMessage(unsigned char* inPayloadPointer)
     theLocation += sizeof(this->mFastSelectionID);
     memcpy(&this->mBufferSize, inPayloadPointer + theLocation, sizeof(this->mBufferSize));
     theLocation += sizeof(this->mBufferSize);
-    memcpy(this->mBuffer, inPayloadPointer + theLocation, this->mBufferSize);
+    this->mBuffer.resize(this->mBufferSize);
+    if (this->mBufferSize != 0)
+        memcpy(&this->mBuffer[0], inPayloadPointer + theLocation, this->mBufferSize);
     theLocation += this->mBufferSize;
-    DecompressUnits(this->mBuffer, this->mBufferSize, this->mUnitIDs);
+    DecompressUnits(this->mBuffer, this->mUnitIDs);
 }
 
 bool EEMSelectUnits::IsResponse(NEMessage* inMessage)
